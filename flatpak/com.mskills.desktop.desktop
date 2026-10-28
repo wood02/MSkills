@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=MSkills
+Comment=All-in-One Assistant for Claude Code, Codex & Gemini CLI
+Exec=mskills %u
+Icon=com.mskills.desktop
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
+MimeType=x-scheme-handler/mskills;x-scheme-handler/ccswitch;
