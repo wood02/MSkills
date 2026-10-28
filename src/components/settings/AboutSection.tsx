@@ -942,7 +942,9 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => settingsApi.openExternal("https://github.com/wood02/MSkills")}
+              onClick={() =>
+                settingsApi.openExternal("https://github.com/wood02/MSkills")
+              }
               className="h-8 gap-1.5 text-xs"
             >
               <Globe className="h-3.5 w-3.5" />
