@@ -861,6 +861,11 @@ fn skill_group_apply_restores_skills_and_leaves_the_rest_alone() {
         "skill group is not a project profile"
     );
 
+    // Leave the saved group before editing; toggles autosave into the active group.
+    state
+        .db
+        .set_current_skill_group_id(AppType::Claude.as_str(), None)
+        .expect("leave saved group");
     ProviderService::switch(&state, AppType::Claude, "p2").expect("switch to p2");
     SkillService::toggle_app(&state.db, "local:frontend", &AppType::Claude, false)
         .expect("disable frontend");

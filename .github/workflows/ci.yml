@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -46,6 +49,7 @@ jobs:
               - "tailwind.config.cjs"
               - "postcss.config.cjs"
               - "components.json"
+              - "scripts/**"
               - ".github/workflows/**"
             backend:
               - "src-tauri/**"
@@ -98,6 +102,9 @@ jobs:
 
       - name: Unit tests
         run: pnpm test:unit
+
+      - name: Release workflow tests
+        run: node --test scripts/release-checks.test.mjs
 
       - name: Build frontend
         run: pnpm build:renderer
@@ -227,6 +234,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
+
           if (-not $testBinary) {
             throw "mskills_lib test binary not found in cargo compiler artifacts"
           }
@@ -253,3 +261,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
+
+  ci-passed:
+    name: CI Passed
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [changes, frontend, backend, backend-windows-wsl2]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify required checks
+        env:
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: node scripts/check-ci.mjs

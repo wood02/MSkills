@@ -3,17 +3,53 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Validate version files
+        id: version
+        run: node scripts/check-release.mjs
+      - name: Require a commit on main
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Require successful main CI for this commit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...context.repo, workflow_id: 'ci.yml', head_sha: process.env.RELEASE_SHA,
+              branch: 'main', event: 'push', per_page: 100,
+            });
+            const run = data.workflow_runs[0];
+            if (!run || run.status !== 'completed' || run.conclusion !== 'success') {
+              core.setFailed('The tagged commit must have successful CI on main. Wait for CI, then rerun this release.');
+            }
+
   release:
+    needs: validate
     runs-on: ${{ matrix.os }}
     environment: release
     strategy:
@@ -35,7 +71,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -124,14 +160,16 @@ jobs:
 
       - name: Prepare Tauri signing key
         shell: bash
+        env:
+          RAW: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           # 未配置 updater 私钥时跳过签名；默认不生成 updater 产物
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+          if [ -z "$RAW" ]; then
             echo "ℹ️ 未配置 TAURI_SIGNING_PRIVATE_KEY，跳过 updater 签名"
             exit 0
           fi
-          
-          RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+
           # 目标：提供正确的私钥“文件路径”给 Tauri CLI，避免内容解码歧义
           KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
           # 情况 1：原始两行文本（第一行以 "untrusted comment:" 开头）
@@ -152,7 +190,6 @@ jobs:
                 echo "✅ 使用一行 Base64 私钥，已构造两行文件"
               else
                 echo "❌ TAURI_SIGNING_PRIVATE_KEY 格式无法识别：既不是两行原文，也不是其 base64，亦非一行 base64" >&2
-                echo "密钥前10个字符: $(echo "$RAW" | head -c 10)..." >&2
                 exit 1
               fi
             fi
@@ -171,20 +208,58 @@ jobs:
             echo "❌ 无法生成私钥 base64 内容" >&2
             exit 1
           fi
+          echo "::add-mask::$KEY_B64"
           echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_B64" >> "$GITHUB_ENV"
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> $GITHUB_ENV
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" >> $GITHUB_ENV
           fi
           echo "✅ Tauri signing key prepared"
 
-      - name: Import Apple signing certificate
+      - name: Check Apple signing credentials
+        id: apple
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          configured=0
+          missing=()
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -n "${!name}" ]; then
+              configured=$((configured + 1))
+            else
+              missing+=("$name")
+            fi
+          done
+          if [ "$configured" -eq 0 ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "::warning::No Apple credentials configured. Building an ad-hoc signed, unnotarized macOS package."
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Incomplete Apple signing configuration: ${missing[*]}"
+            exit 1
+          else
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import Apple signing certificate
+        if: runner.os == 'macOS' && steps.apple.outputs.signed == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
           # Decode .p12 certificate from base64
           CERT_PATH="$RUNNER_TEMP/certificate.p12"
-          printf '%s' "${{ secrets.APPLE_CERTIFICATE }}" | (base64 --decode 2>/dev/null || base64 -D) > "$CERT_PATH"
+          printf '%s' "$APPLE_CERTIFICATE" | (base64 --decode 2>/dev/null || base64 -D) > "$CERT_PATH"
 
           # Save original default keychain for cleanup
           ORIGINAL_DEFAULT_KEYCHAIN=$(security default-keychain -d user | tr -d '"' | xargs)
@@ -192,18 +267,18 @@ jobs:
 
           # Create temporary keychain
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
-          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # Import certificate
           security import "$CERT_PATH" \
             -k "$KEYCHAIN_PATH" \
-            -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
             -T /usr/bin/codesign \
             -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.KEYCHAIN_PASSWORD }}" "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # Dynamically resolve signing identity (must be "Developer ID Application")
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
@@ -228,12 +303,16 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNED: ${{ steps.apple.outputs.signed }}
         run: |
           set -euo pipefail
+          if [ "$APPLE_SIGNED" != 'true' ]; then
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
           max_attempts=3
           for attempt in $(seq 1 "$max_attempts"); do
             echo "=== macOS build/notarization attempt ${attempt}/${max_attempts} ==="
-            if pnpm tauri build --target universal-apple-darwin; then
+            if pnpm tauri build --target universal-apple-darwin --bundles app; then
               echo "✅ macOS build/notarization succeeded"
               exit 0
             fi
@@ -268,6 +347,8 @@ jobs:
       - name: Prepare macOS Assets
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_SIGNED: ${{ steps.apple.outputs.signed }}
         run: |
           set -euxo pipefail
           mkdir -p release-assets
@@ -292,8 +373,12 @@ jobs:
           fi
 
           # Staple notarization ticket to .app (Tauri already notarized it)
-          xcrun stapler staple "$APP_PATH"
-          echo "✅ .app stapled"
+          if [ "$APPLE_SIGNED" = 'true' ]; then
+            xcrun stapler staple "$APP_PATH"
+            echo 'Apple Developer ID 签名并公证。' > release-assets/macos-signing.txt
+          else
+            echo '临时签名，未经 Apple 公证；首次打开可能被 macOS 安全机制拦截。' > release-assets/macos-signing.txt
+          fi
 
           # 1) Collect .tar.gz (updater artifact, only when createUpdaterArtifacts is enabled)
           if [ -n "$TAR_GZ" ]; then
@@ -341,7 +426,7 @@ jobs:
           echo "✅ Styled DMG created: $NEW_DMG"
 
       - name: Notarize macOS DMG
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.apple.outputs.signed == 'true'
         shell: bash
         timeout-minutes: 30
         env:
@@ -385,6 +470,8 @@ jobs:
       - name: Verify macOS code signing and notarization
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_SIGNED: ${{ steps.apple.outputs.signed }}
         run: |
           set -euo pipefail
 
@@ -407,10 +494,10 @@ jobs:
           echo "=== Verifying .app: $APP_PATH ==="
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           echo "✅ codesign verification passed"
-          spctl -a -t exec -vv "$APP_PATH"
-          echo "✅ spctl assessment passed"
-          xcrun stapler validate "$APP_PATH"
-          echo "✅ .app stapler validation passed"
+          if [ "$APPLE_SIGNED" = 'true' ]; then
+            spctl -a -t exec -vv "$APP_PATH"
+            xcrun stapler validate "$APP_PATH"
+          fi
 
           # Verify .dmg (from release-assets/, created by create-dmg + notarized)
           DMG_PATH=$(find release-assets -maxdepth 1 -name "*.dmg" -type f | head -1 || true)
@@ -418,10 +505,10 @@ jobs:
             echo "=== Verifying .dmg: $DMG_PATH ==="
             codesign --verify --verbose=2 "$DMG_PATH"
             echo "✅ .dmg codesign verification passed"
-            spctl -a -t open --context context:primary-signature -vv "$DMG_PATH"
-            echo "✅ .dmg spctl assessment passed"
-            xcrun stapler validate "$DMG_PATH"
-            echo "✅ .dmg stapler validation passed"
+            if [ "$APPLE_SIGNED" = 'true' ]; then
+              spctl -a -t open --context context:primary-signature -vv "$DMG_PATH"
+              xcrun stapler validate "$DMG_PATH"
+            fi
           else
             echo "❌ No .dmg found for verification — release would ship without verified DMG" >&2
             exit 1
@@ -457,10 +544,8 @@ jobs:
             } else {
               Write-Warning "Signature not found for $($msi.Name)"
             }
-          } elseif ($isArm64) {
-            throw 'No Windows ARM64 MSI installer found'
           } else {
-            Write-Warning 'No Windows MSI installer found'
+            throw 'No Windows MSI installer found'
           }
 
           # 绿色版（portable）：仅可执行文件打 zip（不参与 Updater）
@@ -495,10 +580,8 @@ jobs:
             Compress-Archive -Path "$portableDir/*" -DestinationPath $portableZip -Force
             Remove-Item -Recurse -Force $portableDir
             Write-Host "Windows portable zip created: MSkills-$VERSION-Windows$assetSuffix-Portable.zip"
-          } elseif ($isArm64) {
-            throw 'Portable ARM64 exe not found'
           } else {
-            Write-Warning 'Portable exe not found'
+            throw 'Portable exe not found'
           }
 
       - name: Prepare Linux Assets
@@ -518,6 +601,7 @@ jobs:
             echo "AppImage copied: $NEW_APPIMAGE"
           else
             echo "No AppImage found under target/release/bundle" >&2
+            exit 1
           fi
           # 额外上传 .deb（用于手动安装，不参与 Updater）
           DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1 || true)
@@ -525,7 +609,8 @@ jobs:
             cp "$DEB" "release-assets/MSkills-${VERSION}-Linux-${ARCH}.deb"
             echo "Deb package copied: MSkills-${VERSION}-Linux-${ARCH}.deb"
           else
-            echo "No .deb found (optional)"
+            echo "No .deb found" >&2
+            exit 1
           fi
           # 额外上传 .rpm（用于 Fedora/RHEL/openSUSE 等，不参与 Updater）
           RPM=$(find src-tauri/target/release/bundle -name "*.rpm" | head -1 || true)
@@ -533,7 +618,8 @@ jobs:
             cp "$RPM" "release-assets/MSkills-${VERSION}-Linux-${ARCH}.rpm"
             echo "RPM package copied: MSkills-${VERSION}-Linux-${ARCH}.rpm"
           else
-            echo "No .rpm found (optional)"
+            echo "No .rpm found" >&2
+            exit 1
           fi
 
       - name: List prepared assets
@@ -576,7 +662,7 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-22.04
-    needs: release
+    needs: [validate, release]
     permissions:
       contents: write
     steps:
@@ -593,12 +679,22 @@ jobs:
           set -euo pipefail
           ls -la release-assets
 
+      - name: Read macOS signing status
+        id: signing
+        run: |
+          set -euo pipefail
+          echo "notice=$(cat release-assets/macos-signing.txt)" >> "$GITHUB_OUTPUT"
+          rm release-assets/macos-signing.txt
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: MSkills ${{ github.ref_name }}
-          prerelease: true
+          draft: true
+          prerelease: ${{ needs.validate.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           body: |
             ## MSkills ${{ github.ref_name }}
 
@@ -618,6 +714,7 @@ jobs:
 
             ---
             请核对本版本的签名、公证及兼容性验证记录。
+            macOS 签名状态：${{ steps.signing.outputs.notice }}
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -625,7 +722,7 @@ jobs:
   assemble-latest-json:
     name: Assemble latest.json
     runs-on: ubuntu-22.04
-    needs: publish-release
+    needs: [validate, publish-release]
     permissions:
       contents: write
     steps:
@@ -732,3 +829,10 @@ jobs:
           set -euxo pipefail
           [ -f latest.json ] || { echo "No latest.json, skipped"; exit 0; }
           gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease="$PRERELEASE" --latest="$([ "$PRERELEASE" = 'false' ] && echo true || echo false)" --repo "$GITHUB_REPOSITORY"
