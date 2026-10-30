@@ -6,7 +6,7 @@
 
 GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过、分支包含最新 main、评审讨论已解决。禁止强制推送和删除 main；个人维护阶段不强制他人审批，也不配置绕过人员。
 
-`CI Passed` 汇总前端、三个平台后端及 Windows/WSL2 检查。PR 中未涉及的区域可以跳过；main 提交必须全部通过。失败、取消及意外跳过都会阻止合并。
+`CI Passed` 汇总前端和三个平台的后端检查（fmt/clippy 只在 Ubuntu 跑，Windows/macOS 只跑测试）。Windows/WSL2 完整检查移到 `wsl2-nightly.yml` 每晚运行，不阻塞 PR。PR 中未涉及的区域可以跳过；main 提交必须全部通过。失败、取消及意外跳过都会阻止合并。
 
 ## 正式发布操作
 
@@ -28,7 +28,7 @@ GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过�
    git push origin v1.0.0
    ```
 
-4. 到仓库 Actions 查看 `Release`。它会校验标签格式、四处版本号、提交属于 main 历史及该提交的 main CI；然后构建 Windows x64/ARM64、Linux x64/ARM64 和 macOS Universal 包。
+4. 到仓库 Actions 查看 `Release`。它会校验标签格式、四处版本号、提交属于 main 历史及该提交的 main CI；然后构建 Windows x64/ARM64、Linux x64/ARM64 和 macOS Apple Silicon（arm64）包；不再提供 Intel Mac 包。
 5. 所有平台构建成功后创建 Release 草稿并上传附件，更新清单处理成功后才公开。`v1.0.0` 是正式版；`v1.1.0-beta.1`、`v1.1.0-rc.1` 等带预发布标识的标签标为 Pre-release。
 
 标签指向的提交决定构建内容。已公开版本不移动或覆盖标签；源码修复应准备新版本。若只是 CI 未结束或临时环境故障，可等待后在 Actions 重跑失败任务。发布中途失败时可能留下草稿，修复后重跑同一工作流即可继续。

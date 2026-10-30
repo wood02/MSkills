@@ -27,8 +27,8 @@ if (Number.isNaN(pubDate.getTime())) {
 // Longer suffixes must come before their shorter counterparts
 // (e.g. -Windows-arm64.msi before -Windows.msi).
 const RULES = [
-  { suffix: '-macOS.dmg', platform: 'macos', kind: 'dmg', arch: 'universal' },
-  { suffix: '-macOS.zip', platform: 'macos', kind: 'zip', arch: 'universal' },
+  { suffix: '-macOS.dmg', platform: 'macos', kind: 'dmg', arch: 'arm64' },
+  { suffix: '-macOS.zip', platform: 'macos', kind: 'zip', arch: 'arm64' },
   { suffix: '-Windows-arm64-Portable.zip', platform: 'windows', kind: 'portable', arch: 'arm64' },
   { suffix: '-Windows-Portable.zip', platform: 'windows', kind: 'portable', arch: 'x64' },
   { suffix: '-Windows-arm64.msi', platform: 'windows', kind: 'msi', arch: 'arm64' },
