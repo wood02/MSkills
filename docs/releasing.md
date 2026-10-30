@@ -4,9 +4,11 @@
 
 ## main 保护
 
-GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过、分支包含最新 main、评审讨论已解决。禁止强制推送和删除 main；个人维护阶段不强制他人审批，也不配置绕过人员。
+GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过、评审讨论已解决。分支不要求包含最新 main，合并后的问题由 main 上的 CI 兜底。禁止强制推送和删除 main；个人维护阶段不强制他人审批，也不配置绕过人员。
 
-`CI Passed` 汇总前端和三个平台的后端检查（fmt/clippy 只在 Ubuntu 跑，Windows/macOS 只跑测试）。Windows/WSL2 完整检查移到 `wsl2-nightly.yml` 每晚运行，不阻塞 PR。PR 中未涉及的区域可以跳过；main 提交必须全部通过。失败、取消及意外跳过都会阻止合并。
+`CI Passed` 汇总前端和三个平台的后端检查（fmt/clippy 只在 Ubuntu 跑，Windows/macOS 只跑测试）。Windows/WSL2 完整检查和 Windows clippy 移到 `wsl2-nightly.yml` 每晚运行，不阻塞 PR。PR 中未涉及的区域可以跳过；main 提交必须全部通过。失败、取消及意外跳过都会阻止合并。
+
+Rust 缓存只由 main 上的 CI 保存，PR 只读取。仓库已开启 auto-merge，可用 `gh pr merge --auto --squash` 在检查通过后自动合并。
 
 ## 正式发布操作
 

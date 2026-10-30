@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Debug info bloats the target folder and slows linking; CI never reads it.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -119,6 +123,12 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     steps:
+      # Runners are disposable; real-time scanning only slows the file-heavy tests.
+      - name: Disable Windows Defender real-time scanning
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -139,15 +149,13 @@ jobs:
           sudo apt-get install -y --no-install-recommends libsoup-3.0-dev \
             || sudo apt-get install -y --no-install-recommends libsoup2.4-dev
 
-      - name: Cache Cargo registry and build
-        uses: actions/cache@v5
+      # A PR-scoped cache is unreadable by other PRs and evicts main's under the 10 GB limit.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          workspaces: src-tauri -> target
+          shared-key: backend
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Create frontend dist placeholder
         shell: bash
