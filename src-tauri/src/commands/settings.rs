@@ -196,6 +196,17 @@ pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
 /// 这里把退出清理、安装和重启串在同一个后端流程中，避免依赖旧前端继续执行。
 #[tauri::command]
 pub async fn install_update_and_restart(app: AppHandle) -> Result<bool, String> {
+    if crate::commands::is_portable_mode().await? {
+        return Err("便携版请从发布页面手动下载更新".into());
+    }
+    #[cfg(target_os = "linux")]
+    if !matches!(
+        tauri::utils::platform::bundle_type(),
+        Some(tauri::utils::config::BundleType::AppImage)
+    ) {
+        return Err("此安装方式请通过软件包管理器或发布页面手动更新".into());
+    }
+
     let updater = app
         .updater_builder()
         .build()

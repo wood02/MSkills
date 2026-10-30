@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MSkills",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "identifier": "com.mskills.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -36,7 +36,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/mskills/32x32.png",
       "icons/mskills/128x128.png",
@@ -60,8 +60,10 @@
       }
     },
     "updater": {
-      "pubkey": "",
-      "endpoints": []
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5RUJEMzRBNDVDMzlBRDYKUldUV21zTkZTdFByK1V0ajJwN09aYzB4eEtENXRSNGttQVo0TVpuUjEveDBNK2EwNVl4SDhQNHcK",
+      "endpoints": [
+        "https://github.com/wood02/MSkills/releases/latest/download/latest.json"
+      ]
     }
   }
 }

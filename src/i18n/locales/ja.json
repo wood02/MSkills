@@ -811,6 +811,8 @@
     "resetDefault": "デフォルトに戻す（保存後に反映）",
     "checkForUpdates": "アップデートを確認",
     "updateTo": "v{{version}} に更新",
+    "downloadUpdate": "v{{version}} をダウンロード",
+    "manualUpdateHint": "このインストール形式では手動更新が必要です。対応するパッケージをダウンロードしてインストールしてください。",
     "updating": "更新中...",
     "checking": "確認中...",
     "upToDate": "最新バージョンです",
