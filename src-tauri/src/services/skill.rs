@@ -6756,7 +6756,11 @@ mod tests {
             crate::pi_config::test_support::TestAgentDir::at(&temp.path().join(".agents"));
         let db = Arc::new(Database::memory().unwrap());
         let ssot = SkillService::get_ssot_dir().unwrap().join("test-skill");
-        let shared = temp.path().join(".agents/skills/test-skill");
+        let shared = temp
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("test-skill");
         write_skill(&ssot, "managed");
         write_skill(&shared, "external");
         let skill = poisoned_skill("local:test-skill", "test-skill");
