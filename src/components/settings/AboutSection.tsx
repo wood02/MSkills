@@ -467,7 +467,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
 
   const handleCheckUpdate = useCallback(async () => {
     if (hasUpdate) {
-      if (isPortable) {
+      if (isPortable || updateInfo?.manualInstall) {
         try {
           await settingsApi.checkUpdates();
         } catch (error) {
@@ -515,7 +515,14 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
         closeButton: true,
       });
     }
-  }, [checkUpdate, hasUpdate, isPortable, resetDismiss, t]);
+  }, [
+    checkUpdate,
+    hasUpdate,
+    isPortable,
+    resetDismiss,
+    t,
+    updateInfo?.manualInstall,
+  ]);
 
   const handleCopyInstallCommands = useCallback(async () => {
     try {
@@ -975,9 +982,14 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               ) : hasUpdate ? (
                 <>
                   <Download className="h-3.5 w-3.5" />
-                  {t("settings.updateTo", {
-                    version: updateInfo?.availableVersion ?? "",
-                  })}
+                  {t(
+                    isPortable || updateInfo?.manualInstall
+                      ? "settings.downloadUpdate"
+                      : "settings.updateTo",
+                    {
+                      version: updateInfo?.availableVersion ?? "",
+                    },
+                  )}
                 </>
               ) : isChecking ? (
                 <>
@@ -1008,6 +1020,11 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
             {updateInfo.notes && (
               <p className="text-muted-foreground line-clamp-3 leading-relaxed">
                 {updateInfo.notes}
+              </p>
+            )}
+            {(isPortable || updateInfo.manualInstall) && (
+              <p className="mt-2 text-muted-foreground">
+                {t("settings.manualUpdateHint")}
               </p>
             )}
           </motion.div>

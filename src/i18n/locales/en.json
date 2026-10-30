@@ -811,6 +811,8 @@
     "resetDefault": "Reset to default directory (takes effect after saving)",
     "checkForUpdates": "Check for Updates",
     "updateTo": "Update to v{{version}}",
+    "downloadUpdate": "Download v{{version}}",
+    "manualUpdateHint": "This installation requires a manual update. Download and install the matching package.",
     "updating": "Updating...",
     "checking": "Checking...",
     "upToDate": "Up to Date",

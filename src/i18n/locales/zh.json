@@ -811,6 +811,8 @@
     "resetDefault": "恢复默认目录（需保存后生效）",
     "checkForUpdates": "检查更新",
     "updateTo": "更新到 v{{version}}",
+    "downloadUpdate": "下载 v{{version}}",
+    "manualUpdateHint": "当前安装方式需手动更新，请下载对应安装包后安装。",
     "updating": "更新中...",
     "checking": "检查中...",
     "upToDate": "已是最新",

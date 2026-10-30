@@ -16,7 +16,7 @@ GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过�
    - `src-tauri/Cargo.toml` 的 `[package].version`
    - `src-tauri/Cargo.lock` 中 `mskills` 包的版本（不要修改其他依赖版本）
 2. 等待合并后 main 上对应提交的 CI 成功。
-3. 在该提交上创建并推送版本标签。首次独立发布已准备为 `1.0.0`，尚未创建标签：
+3. 在该提交上创建并推送版本标签。将以下示例中的版本号替换为本次已准备的版本：
 
    ```bash
    git fetch origin
@@ -50,9 +50,22 @@ GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过�
 
 ## 应用内更新与镜像
 
-安装包发布与应用内自动更新分别配置。当前 updater 关闭，端点和公钥为空，不生成更新产物；普通 Release 可正常下载安装。
+客户端使用 Tauri updater，更新地址为 `https://github.com/wood02/MSkills/releases/latest/download/latest.json`。启动时检查最新正式版；发现更新后，点击顶部更新图标进入「设置 → 关于」，查看更新说明并确认下载安装。检查失败会显示错误，不会当作「已是最新」。
 
-以后启用 updater 时需配置 MSkills 自己的公钥、`TAURI_SIGNING_PRIVATE_KEY`、可选的 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 和更新端点，并验证更新签名。不要沿用无法控制的上游更新源。
+- macOS `.app`、Windows MSI 安装版、Linux AppImage：下载后校验签名，再安装并重启。
+- Windows 绿色版、Linux deb/rpm 及无法确认安装方式的客户端：可检查新版本，点击下载按钮打开 Release 页面手动安装。deb/rpm 也可通过软件包管理器升级。
+- `v1.0.0` 和 `v1.0.1` 尚未启用更新，用户需手动安装一次包含本功能的新版本。只有该版本正式发布后，公开更新地址才会首次提供 `latest.json`；本地完成配置不代表线上已可更新。
+
+在 GitHub 的 `release` Environment 中设置以下 Secrets：
+
+- `TAURI_SIGNING_PRIVATE_KEY`：Tauri signer 生成的私钥文件内容（Base64 文本）。
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：私钥的加密密码。
+
+仓库只保存对应公钥（`src-tauri/tauri.conf.json`）。密钥可通过 `pnpm tauri signer generate --write-keys <仓库外路径>` 生成；私钥和密码应在仓库外限制文件权限并备份，不得提交到 Git。此更新签名与 Apple 签名、公证分别配置。保留原密钥，避免已安装客户端无法验证后续更新；轮换密钥需要单独设计过渡版本。
+
+日常 `pnpm dev` 不需要私钥；本地执行正式打包时，需要在进程环境中设置上述两个变量，不能将私钥写入配置文件或提交到仓库。
+
+发布工作流要求签名私钥，生成 macOS `.tar.gz`、Windows MSI 和 Linux AppImage 的签名。所有平台构建成功后，`scripts/generate-updater-manifest.mjs` 使用客户端内置公钥验证每个更新包及签名，生成包含六个架构入口的 `latest.json`（macOS 两个架构共用 Universal 包），全部上传后才公开 Release。清单更新说明读取 CHANGELOG 中对应 `## vX.Y.Z - 日期` 条目；发版时应将 Unreleased 内容归入该条目。缺少包、签名错误或签名密钥不匹配均阻止发布。
 
 R2 镜像默认关闭；首次发布不依赖镜像服务。需要时再配置 `R2_MIRROR_ENABLED`、桶、公开地址和相关 Secrets，并单独验证同步触发及清单。
 
