@@ -302,7 +302,12 @@ impl McpService {
         for server in servers.values() {
             if server.apps.is_enabled_for(app) {
                 Self::sync_server_to_app(state, server, app)?;
-            } else if !matches!(app, AppType::Mcode | AppType::Dsh) {
+            } else if matches!(app, AppType::Dsh) {
+                // A row synced while another profile was selected may still be enabled here.
+                if crate::dsh_config::has_mcp(&server.id) {
+                    Self::remove_server_from_app(state, &server.id, app)?;
+                }
+            } else if !matches!(app, AppType::Mcode) {
                 Self::remove_server_from_app(state, &server.id, app)?;
             }
             // MCode's false flag also covers pre-existing, unmanaged servers.

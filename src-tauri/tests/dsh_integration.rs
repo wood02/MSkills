@@ -88,6 +88,12 @@ fn dsh_provider_mcp_prompt_and_skill_group_lifecycle() {
     McpService::toggle_app(&state, "echo", AppType::Dsh, false).unwrap();
     let patch = fs::read_to_string(&path).unwrap();
     assert!(patch.contains("serverName: echo") && patch.contains("disabled: true"));
+    // Simulate a row left enabled by another profile's state, then reproject.
+    fs::write(&path, patch.replace("disabled: true", "disabled: false")).unwrap();
+    McpService::sync_enabled_for_app(&state, &AppType::Dsh).unwrap();
+    assert!(fs::read_to_string(&path)
+        .unwrap()
+        .contains("disabled: true"));
     McpService::delete_server(&state, "echo").unwrap();
     assert!(!fs::read_to_string(&path)
         .unwrap()
