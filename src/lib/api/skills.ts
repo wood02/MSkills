@@ -49,6 +49,7 @@ export interface SkillUninstallResult {
   backupPath?: string;
   preservedPiPath?: string;
   piCleanupIncomplete?: boolean;
+  sharedBackupPath?: string;
 }
 
 export interface SkillDocument {

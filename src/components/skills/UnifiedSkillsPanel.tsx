@@ -579,9 +579,13 @@ const UnifiedSkillsPanel = React.forwardRef<
                 })
               : result.piCleanupIncomplete
                 ? t("skills.uninstallPiCleanupIncomplete")
-                : result.backupPath
-                  ? t("skills.backup.location", { path: result.backupPath })
-                  : undefined,
+                : result.sharedBackupPath
+                  ? t("skills.uninstallSharedBackedUp", {
+                      path: result.sharedBackupPath,
+                    })
+                  : result.backupPath
+                    ? t("skills.backup.location", { path: result.backupPath })
+                    : undefined,
             closeButton: true,
           };
           if (piCleanupIncomplete) {

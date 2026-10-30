@@ -2536,6 +2536,7 @@
     "uninstallSuccess": "Skill {{name}} uninstalled",
     "uninstallPiPreserved": "Pi's copy could not be verified as MSkills-managed and was left in place: {{path}}",
     "uninstallPiCleanupIncomplete": "Pi cleanup could not be completed. Check the Pi Skills directory manually for a leftover copy.",
+    "uninstallSharedBackedUp": "The copy in ~/.agents/skills differed from the managed version; it was backed up to {{path}} before removal.",
     "uninstallFailed": "Failed to uninstall",
     "update": "Update",
     "updating": "Updating...",
