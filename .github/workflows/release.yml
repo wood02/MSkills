@@ -303,6 +303,9 @@ jobs:
         shell: bash
         env:
           APPLE_SIGNED: ${{ steps.apple.outputs.signed }}
+          # Standalone signer in the locked CLI 2.8.x uses the legacy names.
+          TAURI_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_PRIVATE_KEY_PASSWORD: ${{ env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euxo pipefail
           mkdir -p release-assets

@@ -5,7 +5,13 @@ import {
   randomBytes,
   sign,
 } from "node:crypto";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,6 +21,25 @@ import {
   createUpdaterManifest,
   verifyUpdateSignature,
 } from "./generate-updater-manifest.mjs";
+
+test("macOS standalone signer receives the environment names required by locked CLI 2.8.x", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+  const mac = workflow
+    .split("- name: Prepare macOS Assets")[1]
+    ?.split("run: |")[0];
+  assert(mac, "macOS asset preparation step is required");
+  assert.match(
+    mac,
+    /TAURI_PRIVATE_KEY: \$\{\{ env\.TAURI_SIGNING_PRIVATE_KEY \}\}/,
+  );
+  assert.match(
+    mac,
+    /TAURI_PRIVATE_KEY_PASSWORD: \$\{\{ env\.TAURI_SIGNING_PRIVATE_KEY_PASSWORD \}\}/,
+  );
+});
 
 test("CI gate accepts successful checks and only skips unchanged areas on PRs", () => {
   const results = {
