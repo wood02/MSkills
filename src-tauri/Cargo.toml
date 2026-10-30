@@ -1,6 +1,6 @@
 [package]
 name = "mskills"
-version = "1.0.0"
+version = "1.0.1"
 description = "Manage AI coding tools, MCP servers, prompts and Skills"
 authors = ["wood02", "Jason Young"]
 license = "MIT"
