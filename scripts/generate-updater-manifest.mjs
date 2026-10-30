@@ -77,7 +77,7 @@ export function createUpdaterManifest({
     "Invalid repository",
   );
   const targets = [
-    ["macOS.tar.gz", ["darwin-aarch64", "darwin-x86_64"]],
+    ["macOS.tar.gz", ["darwin-aarch64"]],
     ["Windows.msi", ["windows-x86_64"]],
     ["Windows-arm64.msi", ["windows-aarch64"]],
     ["Linux-x86_64.AppImage", ["linux-x86_64"]],

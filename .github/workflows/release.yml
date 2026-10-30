@@ -92,10 +92,10 @@ jobs:
         shell: pwsh
         run: rustup target add aarch64-pc-windows-msvc
 
-      - name: Add macOS targets
+      - name: Add macOS target
         if: runner.os == 'macOS'
         run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
 
       - name: Install Linux system deps
         if: runner.os == 'Linux'
@@ -266,7 +266,7 @@ jobs:
           max_attempts=3
           for attempt in $(seq 1 "$max_attempts"); do
             echo "=== macOS build attempt ${attempt}/${max_attempts} ==="
-            if pnpm tauri build --target universal-apple-darwin --bundles app; then
+            if pnpm tauri build --target aarch64-apple-darwin --bundles app; then
               echo "✅ macOS build succeeded"
               exit 0
             fi
@@ -314,9 +314,7 @@ jobs:
           # Locate bundle artifacts
           TAR_GZ=""; APP_PATH=""
           for path in \
-            "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
             "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/release/bundle/macos"; do
             if [ -d "$path" ]; then
               [ -z "$TAR_GZ" ]   && TAR_GZ=$(find "$path" -maxdepth 1 -name "*.tar.gz" -type f | head -1 || true)
@@ -436,9 +434,7 @@ jobs:
           # Verify .app (from Tauri bundle)
           APP_PATH=""
           for path in \
-            "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
             "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/release/bundle/macos"; do
             if [ -d "$path" ]; then
               [ -z "$APP_PATH" ] && APP_PATH=$(find "$path" -maxdepth 1 -name "*.app" -type d | head -1 || true)
@@ -673,7 +669,7 @@ jobs:
 
             ### 下载
 
-            - **macOS**: `MSkills-${{ github.ref_name }}-macOS.dmg`（推荐）或 `MSkills-${{ github.ref_name }}-macOS.zip`（解压即用）
+            - **macOS (Apple Silicon)**: `MSkills-${{ github.ref_name }}-macOS.dmg`（推荐）或 `MSkills-${{ github.ref_name }}-macOS.zip`（解压即用）
             - **Windows (x86_64)**: `MSkills-${{ github.ref_name }}-Windows.msi`（安装版）或 `MSkills-${{ github.ref_name }}-Windows-Portable.zip`（绿色版）
             - **Windows (ARM64)**: `MSkills-${{ github.ref_name }}-Windows-arm64.msi`（安装版）或 `MSkills-${{ github.ref_name }}-Windows-arm64-Portable.zip`（绿色版）
             - **Linux (x86_64)**: `MSkills-${{ github.ref_name }}-Linux-x86_64.AppImage` / `.deb` / `.rpm`

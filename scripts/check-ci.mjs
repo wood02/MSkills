@@ -7,7 +7,7 @@ export function checkCi(results, event) {
     "success",
     "Changed-area detection must succeed",
   );
-  for (const name of ["frontend", "backend", "backend-windows-wsl2"]) {
+  for (const name of ["frontend", "backend"]) {
     const area = name === "frontend" ? "frontend" : "backend";
     const required =
       event === "push" || results.changes.outputs[area] === "true";

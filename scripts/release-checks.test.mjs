@@ -49,7 +49,6 @@ test("CI gate accepts successful checks and only skips unchanged areas on PRs", 
     },
     frontend: { result: "success" },
     backend: { result: "skipped" },
-    "backend-windows-wsl2": { result: "skipped" },
   };
   checkCi(results, "pull_request");
   assert.throws(() => checkCi(results, "push"), /backend must succeed/);
@@ -131,16 +130,11 @@ test("updater manifest requires all platforms, valid signatures and the embedded
     assert.equal(JSON.parse(JSON.stringify(manifest)).notes, options.notes);
     assert.deepEqual(Object.keys(manifest.platforms).sort(), [
       "darwin-aarch64",
-      "darwin-x86_64",
       "linux-aarch64",
       "linux-x86_64",
       "windows-aarch64",
       "windows-x86_64",
     ]);
-    assert.deepEqual(
-      manifest.platforms["darwin-aarch64"],
-      manifest.platforms["darwin-x86_64"],
-    );
     assert.equal(
       manifest.platforms["windows-aarch64"].url,
       `https://github.com/wood02/MSkills/releases/download/${tag}/MSkills-${tag}-Windows-arm64.msi`,
