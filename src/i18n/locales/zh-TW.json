@@ -2537,6 +2537,7 @@
     "uninstallSuccess": "技能 {{name}} 已解除安裝",
     "uninstallPiPreserved": "無法確認該 Pi 副本由 MSkills 管理，已保留：{{path}}",
     "uninstallPiCleanupIncomplete": "Pi 清理未能完成，請手動檢查 Pi Skills 目錄中是否有殘留副本。",
+    "uninstallSharedBackedUp": "~/.agents/skills 中的副本與託管版本不一致，已在刪除前備份到：{{path}}",
     "uninstallFailed": "解除安裝失敗",
     "update": "更新",
     "updating": "更新中...",

@@ -202,6 +202,9 @@ pub struct SkillUninstallResult {
     pub preserved_pi_path: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub pi_cleanup_incomplete: bool,
+    /// 共享目录原件与托管内容不一致时，删除前额外备份到的位置
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_backup_path: Option<String>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -1011,9 +1014,8 @@ impl SkillService {
     /// 卸载 Skill
     ///
     /// 流程：
-    /// 1. 从所有应用目录删除
-    /// 2. 从 SSOT 删除
-    /// 3. 从数据库删除
+    /// 1. 校验并备份，从应用目录和共享目录删除（共享目录内容不一致时额外备份）
+    /// 2. 清理成功后从 SSOT 和数据库删除
     pub fn uninstall(db: &Arc<Database>, id: &str) -> Result<SkillUninstallResult> {
         let _state_guard = skill_state_write_guard();
 
@@ -1030,7 +1032,7 @@ impl SkillService {
         // 全项目只有这一处调用且未暴露为命令，若在此直接返回 Err，用户就再也无法
         // 从界面删掉这条记录，只能手改 SQLite。安全目标是「不碰危险路径」，
         // 不是「把用户锁在坏状态里」。
-        let (backup_path, preserved_pi_path, pi_cleanup_incomplete) =
+        let (backup_path, preserved_pi_path, pi_cleanup_incomplete, shared_backup_path) =
             match Self::require_valid_directory(&skill.directory) {
                 Ok(directory) => {
                     let ssot_dir = Self::get_ssot_dir()?;
@@ -1086,6 +1088,23 @@ impl SkillService {
                         }
                     }
 
+                    let shared_path = get_agents_skills_dir()
+                        .filter(|root| !Self::paths_alias(&ssot_dir, root))
+                        .map(|root| root.join(&directory))
+                        .filter(|path| {
+                            !preserved_pi_path
+                                .as_deref()
+                                .is_some_and(|preserved| Self::paths_overlap(path, preserved))
+                        });
+                    if let Some(shared) = &shared_path {
+                        if !Self::is_symlink(shared) && Self::paths_overlap(&source, shared) {
+                            return Err(anyhow!(
+                                "共享 Skill 路径与托管目录重叠，拒绝删除: {}",
+                                shared.display()
+                            ));
+                        }
+                    }
+
                     let backup_path = Self::create_uninstall_backup_excluding(
                         &skill,
                         preserved_pi_path.as_deref(),
@@ -1113,16 +1132,64 @@ impl SkillService {
                         }
                     }
 
-                    // 其他应用沿用既有的逐项容错行为。
+                    let mut shared_backup_path = None;
+                    // 清理失败时保留 SSOT 和记录，允许修复权限后重试。
                     for app in AppType::all() {
-                        if matches!(app, AppType::Pi | AppType::Mcode) {
+                        if matches!(app, AppType::Pi | AppType::Mcode | AppType::ClaudeDesktop) {
                             continue;
                         }
-                        let _ = Self::remove_from_app_preserving(
+                        let app_dir = Self::get_app_skills_dir(&app)?;
+                        if Self::paths_alias(&ssot_dir, &app_dir) {
+                            continue;
+                        }
+                        Self::remove_from_app_preserving(
                             &directory,
                             &app,
                             preserved_pi_path.as_deref(),
-                        );
+                        )
+                        .map_err(|error| {
+                            anyhow!(
+                                "无法清理 {} 的 Skill {}: {error:#}",
+                                app.as_str(),
+                                app_dir.join(&directory).display()
+                            )
+                        })?;
+                    }
+                    if let Some(shared) = shared_path.filter(|path| {
+                        !preserved_pi_path
+                            .as_deref()
+                            .is_some_and(|preserved| Self::paths_overlap(path, preserved))
+                    }) {
+                        // 导入即接管：原件可能在接管后被更新过，内容不一致的真实目录先单独备份再删除。
+                        let unverified_copy = !Self::is_symlink(&shared)
+                            && Self::inspect_pi_skill_destination(&source, &shared, &directory)
+                                .is_err();
+                        let remove_shared = || {
+                            Self::remove_path(&shared).map_err(|error| {
+                                anyhow!("无法清理共享 Skill {}: {error:#}", shared.display())
+                            })
+                        };
+                        match (unverified_copy, backup_path.as_deref()) {
+                            (false, _) => remove_shared()?,
+                            (true, Some(backup)) => {
+                                let destination = Path::new(backup).join("shared");
+                                Self::copy_dir_recursive(&shared, &destination).map_err(
+                                    |error| {
+                                        anyhow!(
+                                            "无法备份共享 Skill {}: {error:#}",
+                                            shared.display()
+                                        )
+                                    },
+                                )?;
+                                remove_shared()?;
+                                shared_backup_path =
+                                    Some(destination.to_string_lossy().to_string());
+                            }
+                            (true, None) => log::warn!(
+                                "Skill {id} 没有可用的卸载备份，保留共享 Skill {}",
+                                shared.display()
+                            ),
+                        }
                     }
 
                     // 从 SSOT 删除
@@ -1135,14 +1202,19 @@ impl SkillService {
                     } else if skill_path.exists() {
                         fs::remove_dir_all(&skill_path)?;
                     }
-                    (backup_path, preserved_pi_path, pi_cleanup_incomplete)
+                    (
+                        backup_path,
+                        preserved_pi_path,
+                        pi_cleanup_incomplete,
+                        shared_backup_path,
+                    )
                 }
                 Err(err) => {
                     log::warn!(
                     "Skill {id} 的 directory 非法（{:?}），跳过文件清理，仅删除数据库记录: {err}",
                     skill.directory
                 );
-                    (None, None, true)
+                    (None, None, true, None)
                 }
             };
 
@@ -1162,6 +1234,7 @@ impl SkillService {
             backup_path,
             preserved_pi_path: preserved_pi_path.map(|path| path.to_string_lossy().to_string()),
             pi_cleanup_incomplete,
+            shared_backup_path,
         })
     }
 
@@ -2664,7 +2737,7 @@ impl SkillService {
         }
 
         Err(anyhow!(
-            "Pi 中已存在同名但内容不同的 Skill，拒绝覆盖或删除: {directory}"
+            "目标目录中存在无法验证为托管副本的同名 Skill，拒绝覆盖或删除: {directory}"
         ))
     }
 
@@ -6434,6 +6507,274 @@ mod tests {
         assert_eq!(imported.len(), 1);
         assert!(imported[0].apps.pi);
         assert!(SkillService::get_all_installed(&db).unwrap()[0].apps.pi);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn issue9_uninstall_removes_imported_shared_source_and_app_links() {
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::MSkills);
+        let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+        let db = Arc::new(Database::memory().unwrap());
+        let directory = "shared-skill";
+        let shared = temp.path().join(".agents/skills").join(directory);
+        write_skill(&shared, "shared");
+        let mut app_paths = Vec::new();
+        for app in [
+            AppType::Claude,
+            AppType::Codex,
+            AppType::Gemini,
+            AppType::OpenCode,
+            AppType::OpenClaw,
+        ] {
+            let path = SkillService::get_app_skills_dir(&app)
+                .unwrap()
+                .join(directory);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&shared, &path).unwrap();
+            app_paths.push(path);
+        }
+        let imported = SkillService::import_from_apps(
+            &db,
+            vec![ImportSkillSelection {
+                directory: directory.into(),
+                apps: SkillApps {
+                    claude: true,
+                    codex: true,
+                    gemini: true,
+                    opencode: true,
+                    ..Default::default()
+                },
+            }],
+        )
+        .unwrap();
+
+        let result = SkillService::uninstall(&db, &imported[0].id).unwrap();
+
+        assert!(
+            !shared.exists(),
+            "the imported .agents source must not be rediscovered"
+        );
+        assert!(app_paths
+            .iter()
+            .all(|path| fs::symlink_metadata(path).is_err()));
+        assert!(!SkillService::get_ssot_dir()
+            .unwrap()
+            .join(directory)
+            .exists());
+        assert!(db.get_installed_skill(&imported[0].id).unwrap().is_none());
+        assert!(!SkillService::scan_unmanaged(&db)
+            .unwrap()
+            .iter()
+            .any(|skill| skill.directory == directory));
+        let backup = PathBuf::from(result.backup_path.unwrap());
+        assert!(fs::read_to_string(backup.join("skill/SKILL.md"))
+            .unwrap()
+            .contains("name: shared"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn issue9_uninstall_keeps_record_and_ssot_when_app_cleanup_fails() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::MSkills);
+        let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+        let db = Arc::new(Database::memory().unwrap());
+        let app_skill = SkillService::get_app_skills_dir(&AppType::Claude)
+            .unwrap()
+            .join("test-skill");
+        write_skill(&app_skill, "managed");
+        let imported = SkillService::import_from_apps(
+            &db,
+            vec![ImportSkillSelection {
+                directory: "test-skill".into(),
+                apps: SkillApps {
+                    claude: true,
+                    ..Default::default()
+                },
+            }],
+        )
+        .unwrap();
+        let permissions = fs::metadata(&app_skill).unwrap().permissions();
+        fs::set_permissions(&app_skill, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = SkillService::uninstall(&db, &imported[0].id);
+        fs::set_permissions(&app_skill, permissions).unwrap();
+
+        let error = result.expect_err("failed app cleanup must not report success");
+        assert!(error.to_string().contains(&app_skill.display().to_string()));
+        assert!(db.get_installed_skill(&imported[0].id).unwrap().is_some());
+        assert!(SkillService::get_ssot_dir()
+            .unwrap()
+            .join("test-skill/SKILL.md")
+            .exists());
+        assert!(app_skill.join("SKILL.md").exists());
+        assert_eq!(SkillService::list_backups().unwrap().len(), 1);
+
+        SkillService::uninstall(&db, &imported[0].id).unwrap();
+        assert!(!app_skill.exists());
+        assert!(db.get_installed_skill(&imported[0].id).unwrap().is_none());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn issue9_uninstall_backs_up_a_changed_shared_source_before_deleting_it() {
+        for hidden_change in [false, true] {
+            let temp = tempdir().unwrap();
+            let _home = TestHomeGuard::set(temp.path());
+            let _location = StorageLocationGuard::set(SkillStorageLocation::MSkills);
+            let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+            let db = Arc::new(Database::memory().unwrap());
+            let skill = poisoned_skill("local:test-skill", "test-skill");
+            db.save_skill(&skill).unwrap();
+            let ssot = SkillService::get_ssot_dir().unwrap().join("test-skill");
+            let shared = temp.path().join(".agents/skills/test-skill");
+            let app_skill = SkillService::get_app_skills_dir(&AppType::Claude)
+                .unwrap()
+                .join("test-skill");
+            write_skill(&ssot, "managed");
+            write_skill(&app_skill, "managed");
+            write_skill(&shared, if hidden_change { "managed" } else { "external" });
+            if hidden_change {
+                fs::write(shared.join(".env"), "external data").unwrap();
+            }
+
+            let result = SkillService::uninstall(&db, &skill.id).unwrap();
+
+            assert!(!shared.exists());
+            assert!(!ssot.exists());
+            assert!(!app_skill.exists());
+            assert!(db.get_installed_skill(&skill.id).unwrap().is_none());
+            let shared_backup =
+                PathBuf::from(result.backup_path.as_deref().unwrap()).join("shared");
+            assert_eq!(
+                result.shared_backup_path,
+                Some(shared_backup.display().to_string())
+            );
+            assert!(fs::read_to_string(shared_backup.join("SKILL.md"))
+                .unwrap()
+                .contains(if hidden_change { "managed" } else { "external" }));
+            if hidden_change {
+                assert_eq!(
+                    fs::read_to_string(shared_backup.join(".env")).unwrap(),
+                    "external data"
+                );
+            }
+
+            // 额外的 shared/ 子目录不影响备份列表和还原，还原内容来自 skill/。
+            let backup_id = PathBuf::from(result.backup_path.unwrap())
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            assert!(SkillService::list_backups()
+                .unwrap()
+                .iter()
+                .any(|entry| entry.backup_id == backup_id));
+            SkillService::restore_from_backup(&db, &backup_id, &AppType::Claude).unwrap();
+            assert!(fs::read_to_string(ssot.join("SKILL.md"))
+                .unwrap()
+                .contains("name: managed"));
+            assert!(!ssot.join(".env").exists());
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn issue9_uninstall_removes_shared_links_without_touching_their_targets() {
+        for managed_target in [false, true] {
+            let temp = tempdir().unwrap();
+            let _home = TestHomeGuard::set(temp.path());
+            let _location = StorageLocationGuard::set(SkillStorageLocation::MSkills);
+            let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+            let db = Arc::new(Database::memory().unwrap());
+            let skill = poisoned_skill("local:test-skill", "test-skill");
+            db.save_skill(&skill).unwrap();
+            let ssot = SkillService::get_ssot_dir().unwrap().join("test-skill");
+            let external = temp.path().join("external/test-skill");
+            let shared = temp.path().join(".agents/skills/test-skill");
+            write_skill(&ssot, "managed");
+            write_skill(&external, "managed");
+            fs::create_dir_all(shared.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(if managed_target { &ssot } else { &external }, &shared)
+                .unwrap();
+
+            SkillService::uninstall(&db, &skill.id).unwrap();
+
+            assert!(external.join("SKILL.md").exists());
+            assert!(fs::symlink_metadata(&shared).is_err());
+            assert!(!ssot.exists());
+            assert!(db.get_installed_skill(&skill.id).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn issue9_uninstall_handles_shared_roots_aliased_to_ssot() {
+        for location in [SkillStorageLocation::MSkills, SkillStorageLocation::Unified] {
+            let temp = tempdir().unwrap();
+            let _home = TestHomeGuard::set(temp.path());
+            let _location = StorageLocationGuard::set(location);
+            let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+            let db = Arc::new(Database::memory().unwrap());
+            let ssot = SkillService::get_ssot_dir().unwrap();
+            let shared_root = temp.path().join(".agents/skills");
+            if matches!(location, SkillStorageLocation::MSkills) {
+                fs::create_dir_all(shared_root.parent().unwrap()).unwrap();
+                std::os::unix::fs::symlink(&ssot, &shared_root).unwrap();
+            }
+            let app_root = SkillService::get_app_skills_dir(&AppType::Claude).unwrap();
+            fs::create_dir_all(app_root.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&ssot, &app_root).unwrap();
+            write_skill(&ssot.join("test-skill"), "managed");
+            write_skill(&ssot.join("other-skill"), "unrelated");
+            let skill = poisoned_skill("local:test-skill", "test-skill");
+            db.save_skill(&skill).unwrap();
+
+            SkillService::uninstall(&db, &skill.id).unwrap();
+
+            assert!(!ssot.join("test-skill").exists());
+            assert!(shared_root.join("other-skill/SKILL.md").exists());
+            assert!(app_root.join("other-skill/SKILL.md").exists());
+            assert!(db.get_installed_skill(&skill.id).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn issue9_uninstall_preserves_foreign_pi_data_in_the_shared_root() {
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::MSkills);
+        let _pi_dir =
+            crate::pi_config::test_support::TestAgentDir::at(&temp.path().join(".agents"));
+        let db = Arc::new(Database::memory().unwrap());
+        let ssot = SkillService::get_ssot_dir().unwrap().join("test-skill");
+        let shared = temp
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("test-skill");
+        write_skill(&ssot, "managed");
+        write_skill(&shared, "external");
+        let skill = poisoned_skill("local:test-skill", "test-skill");
+        db.save_skill(&skill).unwrap();
+
+        let result = SkillService::uninstall(&db, &skill.id).unwrap();
+
+        assert!(result.pi_cleanup_incomplete);
+        assert_eq!(result.preserved_pi_path, Some(shared.display().to_string()));
+        assert!(fs::read_to_string(shared.join("SKILL.md"))
+            .unwrap()
+            .contains("name: external"));
+        assert!(!ssot.exists());
+        assert!(db.get_installed_skill(&skill.id).unwrap().is_none());
     }
 
     #[test]

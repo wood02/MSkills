@@ -893,6 +893,26 @@ describe("UnifiedSkillsPanel", () => {
     expect(toastSuccessMock).not.toHaveBeenCalled();
   });
 
+  it("reports where a differing shared copy was backed up", async () => {
+    installedSkillsMock = [makeInstalledSkill({ name: "Shared Skill" })];
+    uninstallSkillMock.mockResolvedValueOnce({
+      backupPath: "/tmp/backup",
+      sharedBackupPath: "/tmp/backup/shared",
+    });
+    renderPanel();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTitle("skills.uninstall"));
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
+
+    await waitFor(() => {
+      expect(toastSuccessMock).toHaveBeenCalledWith("skills.uninstallSuccess", {
+        description: "skills.uninstallSharedBackedUp",
+        closeButton: true,
+      });
+    });
+  });
+
   it.each([
     ["name", "searchable name"],
     ["id", "opaque-id-token"],
