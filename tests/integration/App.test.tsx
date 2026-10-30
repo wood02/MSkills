@@ -311,6 +311,7 @@ describe("App integration with MSW", () => {
         openclaw: false,
         pi: false,
         mcode: false,
+        dsh: false,
       },
     });
     localStorage.setItem("mskills-last-view", "skills");

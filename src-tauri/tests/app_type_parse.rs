@@ -4,6 +4,11 @@ use mskills_lib::AppType;
 
 #[test]
 fn parse_known_apps_case_insensitive_and_trim() {
+    assert!(matches!(AppType::from_str(" DSH "), Ok(AppType::Dsh)));
+    assert!(matches!(
+        AppType::from_str("deepseek-harness"),
+        Ok(AppType::Dsh)
+    ));
     assert!(matches!(AppType::from_str("claude"), Ok(AppType::Claude)));
     assert!(matches!(AppType::from_str("codex"), Ok(AppType::Codex)));
     assert!(matches!(

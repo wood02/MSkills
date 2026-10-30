@@ -922,7 +922,8 @@
     "openclaw": "OpenClaw",
     "hermes": "Hermes",
     "pi": "Pi",
-    "mcode": "MiniMax Code"
+    "mcode": "MiniMax Code",
+    "dsh": "DeepSeek Harness"
   },
   "pi": {
     "empty": {
@@ -1735,7 +1736,8 @@
       "opencode": "OpenCode",
       "grokbuild": "Grok Build",
       "pi": "Pi",
-      "mcode": "MiniMax Code"
+      "mcode": "MiniMax Code",
+      "dsh": "DeepSeek Harness"
     },
     "rawInputLabel": "原始",
     "sessionSync": {
@@ -2040,7 +2042,8 @@
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
-        "mcode": "MiniMax Code"
+        "mcode": "MiniMax Code",
+        "dsh": "DeepSeek Harness"
       }
     },
     "userLevelPath": "ユーザーレベルの MCP パス",
@@ -3422,5 +3425,15 @@
     "expiredHint": "{{tool}}コマンドを実行してログインを更新してください",
     "queryFailed": "クエリに失敗しました",
     "refresh": "更新"
+  },
+  "dsh": {
+    "providerId": "プロバイダー ID",
+    "providerIdHint": "小文字、数字、ハイフンを使用してください。作成後は変更できません。deepseek はネイティブログイン用の予約名です。",
+    "keyPlaceholder": "空欄の場合は現在の認証情報参照を保持",
+    "keyHint": "キーは dsh の非公開認証情報ファイルに保存されます。apiKeyEnv には既存の認証情報名や環境変数名も指定できます。",
+    "configHint": "dsh のネイティブ形式：api、baseURL、apiKeyEnv、models（id を持つオブジェクトの配列）。対応プロトコル：openai-completions、openai-responses、anthropic-messages。",
+    "profile": "DSH プロファイル",
+    "profileHint": "既定は web。デスクトップ版は desktop、カスタム構成は起動時の profile 名を指定します。プロバイダーと MCP はこのプロファイル、Skills と Prompts は DSH_HOME を使用します。",
+    "profileInvalid": "英数字、- と _ のみ使用できます。"
   }
 }

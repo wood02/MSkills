@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useTranslation } from "react-i18next";
 import { Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +35,7 @@ const APP_CONFIG: Array<{
   { id: "openclaw", icon: "openclaw", nameKey: "apps.openclaw" },
   { id: "hermes", icon: "hermes", nameKey: "apps.hermes" },
   { id: "pi", icon: "pi", nameKey: "apps.pi" },
+  { id: "dsh", icon: "deepseek", nameKey: "apps.dsh" },
   { id: "mcode", icon: "minimax", nameKey: "apps.mcode" },
 ];
 
@@ -42,6 +46,17 @@ export function AppVisibilitySettings({
   const { t } = useTranslation();
 
   const visibleApps: VisibleApps = settings.visibleApps ?? DEFAULT_VISIBLE_APPS;
+  const savedProfile = settings.dshProfile ?? "web";
+  // Settings autosave on change, so keep keystrokes local until the profile is committed.
+  const [profile, setProfile] = useState(savedProfile);
+  useEffect(() => setProfile(savedProfile), [savedProfile]);
+  const profileValid = /^[A-Za-z0-9_-]*$/.test(profile.trim());
+  const commitProfile = () => {
+    const next = profile.trim() || "web";
+    if (!profileValid) return;
+    setProfile(next);
+    if (next !== savedProfile) onChange({ dshProfile: next });
+  };
 
   // Count how many apps are currently visible
   const visibleCount = Object.values(visibleApps).filter(Boolean).length;
@@ -71,7 +86,8 @@ export function AppVisibilitySettings({
       </header>
       <div className="flex flex-wrap gap-1 rounded-md border border-border-default bg-background p-1">
         {APP_CONFIG.map((app) => {
-          const isVisible = visibleApps[app.id];
+          const isVisible =
+            visibleApps[app.id] ?? DEFAULT_VISIBLE_APPS[app.id] ?? true;
           // Disable button if this is the last visible app
           const isDisabled = isVisible && visibleCount <= 1;
 
@@ -88,6 +104,22 @@ export function AppVisibilitySettings({
             </AppButton>
           );
         })}
+      </div>
+      <div className="space-y-2 pt-2">
+        <Label htmlFor="dsh-profile">{t("dsh.profile")}</Label>
+        <Input
+          id="dsh-profile"
+          value={profile}
+          onChange={(e) => setProfile(e.target.value)}
+          onBlur={commitProfile}
+          onKeyDown={(e) => e.key === "Enter" && commitProfile()}
+          aria-invalid={!profileValid}
+          placeholder="web"
+        />
+        {!profileValid && (
+          <p className="text-xs text-destructive">{t("dsh.profileInvalid")}</p>
+        )}
+        <p className="text-xs text-muted-foreground">{t("dsh.profileHint")}</p>
       </div>
       <ToggleRow
         icon={<Filter className="h-4 w-4 text-violet-500" />}

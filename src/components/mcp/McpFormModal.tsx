@@ -70,12 +70,14 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
     openclaw: boolean;
     hermes: boolean;
     mcode: boolean;
+    dsh: boolean;
   }>(() => {
     if (initialData?.apps) {
       return {
         ...initialData.apps,
         grokbuild: initialData.apps.grokbuild ?? false,
         mcode: initialData.apps.mcode ?? false,
+        dsh: initialData.apps.dsh ?? false,
       };
     }
     return {
@@ -87,6 +89,7 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
       openclaw: defaultEnabledApps.includes("openclaw"),
       hermes: defaultEnabledApps.includes("hermes"),
       mcode: defaultEnabledApps.includes("mcode"),
+      dsh: defaultEnabledApps.includes("dsh"),
     };
   });
 
@@ -641,6 +644,21 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
                     className="text-sm text-foreground cursor-pointer select-none"
                   >
                     {t("mcp.unifiedPanel.apps.mcode")}
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="enable-dsh"
+                    checked={enabledApps.dsh}
+                    onCheckedChange={(checked: boolean) =>
+                      setEnabledApps({ ...enabledApps, dsh: checked })
+                    }
+                  />
+                  <label
+                    htmlFor="enable-dsh"
+                    className="text-sm text-foreground cursor-pointer select-none"
+                  >
+                    {t("mcp.unifiedPanel.apps.dsh")}
                   </label>
                 </div>
               </div>

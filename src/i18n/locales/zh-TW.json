@@ -923,7 +923,8 @@
     "openclaw": "OpenClaw",
     "hermes": "Hermes",
     "pi": "Pi",
-    "mcode": "MiniMax Code"
+    "mcode": "MiniMax Code",
+    "dsh": "DeepSeek Harness"
   },
   "pi": {
     "empty": {
@@ -1736,7 +1737,8 @@
       "opencode": "OpenCode",
       "grokbuild": "Grok Build",
       "pi": "Pi",
-      "mcode": "MiniMax Code"
+      "mcode": "MiniMax Code",
+      "dsh": "DeepSeek Harness"
     },
     "rawInputLabel": "原始",
     "sessionSync": {
@@ -2041,7 +2043,8 @@
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
-        "mcode": "MiniMax Code"
+        "mcode": "MiniMax Code",
+        "dsh": "DeepSeek Harness"
       }
     },
     "userLevelPath": "使用者級 MCP 設定路徑",
@@ -3423,5 +3426,15 @@
     "expiredHint": "請執行 {{tool}} 命令重新整理登入",
     "queryFailed": "查詢失敗",
     "refresh": "重新整理"
+  },
+  "dsh": {
+    "providerId": "供應商 ID",
+    "providerIdHint": "使用小寫字母、數字和連字號，建立後無法修改。deepseek 保留給原生登入，請使用其他 ID。",
+    "keyPlaceholder": "留空保留憑證參照",
+    "keyHint": "金鑰儲存至 dsh 的私人憑證檔案。apiKeyEnv 也可填寫既有憑證名或環境變數名。",
+    "configHint": "使用 dsh 原生格式：api、baseURL、apiKeyEnv 和 models（包含 id 的物件陣列）。支援協定 openai-completions、openai-responses、anthropic-messages。",
+    "profile": "DSH 設定檔",
+    "profileHint": "預設 web。桌面版填寫 desktop，自訂設定填寫啟動 dsh 時選擇的 profile。供應商和 MCP 使用此設定檔；Skills 和 Prompts 使用 DSH_HOME。",
+    "profileInvalid": "只能包含字母、數字、- 和 _。"
   }
 }

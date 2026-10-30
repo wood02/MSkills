@@ -87,6 +87,7 @@ pub fn scan_sessions() -> Vec<SessionMeta> {
     sessions.extend(r7);
     sessions.extend(r8);
     sessions.extend(mcode::scan_sessions());
+    sessions.extend(providers::dsh::scan_sessions());
 
     sessions.sort_by(|a, b| {
         let a_ts = a.last_active_at.or(a.created_at).unwrap_or(0);
@@ -119,6 +120,7 @@ pub fn load_messages(provider_id: &str, source_path: &str) -> Result<Vec<Session
         "grokbuild" => grokbuild::load_messages(path),
         "hermes" => hermes::load_messages(path),
         "pi" => pi::load_messages(path),
+        "dsh" => providers::dsh::load_messages(path),
         _ => Err(format!("Unsupported provider: {provider_id}")),
     }
 }
@@ -128,6 +130,12 @@ pub fn delete_session(
     session_id: &str,
     source_path: &str,
 ) -> Result<bool, String> {
+    if provider_id == "dsh" {
+        return Err(
+            "Manage DSH sessions in its native UI so generation logs and sidecars stay consistent"
+                .into(),
+        );
+    }
     if provider_id == "mcode" {
         return Err(
             "Delete this session in MCode so its runtime state and history are removed together"

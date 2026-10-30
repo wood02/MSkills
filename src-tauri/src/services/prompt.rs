@@ -94,8 +94,8 @@ impl PromptService {
             return upsert_pi_prompt(state, id, prompt);
         }
 
-        if app == AppType::Mcode {
-            return upsert_mcode_prompt(state, id, prompt, &prompt_file_path(&app)?);
+        if matches!(app, AppType::Mcode | AppType::Dsh) {
+            return upsert_native_prompt(state, &app, id, prompt, &prompt_file_path(&app)?);
         }
 
         // 检查是否为已启用的提示词
@@ -129,9 +129,9 @@ impl PromptService {
         if matches!(app, AppType::Pi) {
             return delete_pi_prompt(state, id);
         }
-        let _guard = if app == AppType::Mcode {
+        let _guard = if matches!(app, AppType::Mcode | AppType::Dsh) {
             Some(
-                MCODE_PROMPT_LOCK
+                NATIVE_PROMPT_LOCK
                     .lock()
                     .map_err(|error| AppError::Message(error.to_string()))?,
             )
@@ -154,8 +154,8 @@ impl PromptService {
         if matches!(app, AppType::Pi) {
             return enable_pi_prompt(state, id);
         }
-        if app == AppType::Mcode {
-            return enable_mcode_prompt(state, id, &prompt_file_path(&app)?);
+        if matches!(app, AppType::Mcode | AppType::Dsh) {
+            return enable_native_prompt(state, &app, id, &prompt_file_path(&app)?);
         }
 
         // 回填当前 live 文件内容到已启用的提示词，或创建备份
@@ -288,9 +288,9 @@ impl PromptService {
             return Ok(());
         }
 
-        let _guard = if app == AppType::Mcode {
+        let _guard = if matches!(app, AppType::Mcode | AppType::Dsh) {
             Some(
-                MCODE_PROMPT_LOCK
+                NATIVE_PROMPT_LOCK
                     .lock()
                     .map_err(|error| AppError::Message(error.to_string()))?,
             )
@@ -404,19 +404,20 @@ impl PromptService {
     }
 }
 
-static MCODE_PROMPT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static NATIVE_PROMPT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn upsert_mcode_prompt(
+fn upsert_native_prompt(
     state: &AppState,
+    app: &AppType,
     id: &str,
     prompt: Prompt,
     target_path: &Path,
 ) -> Result<(), AppError> {
-    let _guard = MCODE_PROMPT_LOCK
+    let _guard = NATIVE_PROMPT_LOCK
         .lock()
         .map_err(|error| AppError::Message(error.to_string()))?;
-    validate_prompt_content(&AppType::Mcode, &prompt.content)?;
-    let prompts = state.db.get_prompts("mcode")?;
+    validate_prompt_content(app, &prompt.content)?;
+    let prompts = state.db.get_prompts(app.as_str())?;
     let clear_live = !prompt.enabled
         && prompts.get(id).is_some_and(|previous| previous.enabled)
         && !prompts
@@ -424,24 +425,29 @@ fn upsert_mcode_prompt(
             .any(|(key, prompt)| key != id && prompt.enabled)
         && target_path.exists();
     if !prompt.enabled && !clear_live {
-        return state.db.save_prompt("mcode", &prompt);
+        return state.db.save_prompt(app.as_str(), &prompt);
     }
     crate::mcode_config::write_and_commit(
         target_path,
         || write_text_file(target_path, if clear_live { "" } else { &prompt.content }),
-        || state.db.save_prompt("mcode", &prompt),
+        || state.db.save_prompt(app.as_str(), &prompt),
     )
 }
 
-fn enable_mcode_prompt(state: &AppState, id: &str, target_path: &Path) -> Result<(), AppError> {
-    let _guard = MCODE_PROMPT_LOCK
+fn enable_native_prompt(
+    state: &AppState,
+    app: &AppType,
+    id: &str,
+    target_path: &Path,
+) -> Result<(), AppError> {
+    let _guard = NATIVE_PROMPT_LOCK
         .lock()
         .map_err(|error| AppError::Message(error.to_string()))?;
-    let mut prompts = state.db.get_prompts("mcode")?;
+    let mut prompts = state.db.get_prompts(app.as_str())?;
     let target = prompts
         .get(id)
         .ok_or_else(|| AppError::InvalidInput(format!("提示词 {id} 不存在")))?;
-    validate_prompt_content(&AppType::Mcode, &target.content)?;
+    validate_prompt_content(app, &target.content)?;
 
     let live_content = match std::fs::read_to_string(target_path) {
         Ok(content) => content,
@@ -479,12 +485,26 @@ fn enable_mcode_prompt(state: &AppState, id: &str, target_path: &Path) -> Result
         prompt.enabled = key == id;
     }
     let content = &prompts[id].content;
-    validate_prompt_content(&AppType::Mcode, content)?;
+    validate_prompt_content(app, content)?;
     crate::mcode_config::write_and_commit(
         target_path,
         || write_text_file(target_path, content),
-        || state.db.save_mcode_prompts(&prompts),
+        || state.db.save_native_prompts(app.as_str(), &prompts),
     )
+}
+
+#[cfg(test)]
+fn upsert_mcode_prompt(
+    state: &AppState,
+    id: &str,
+    prompt: Prompt,
+    target_path: &Path,
+) -> Result<(), AppError> {
+    upsert_native_prompt(state, &AppType::Mcode, id, prompt, target_path)
+}
+#[cfg(test)]
+fn enable_mcode_prompt(state: &AppState, id: &str, target_path: &Path) -> Result<(), AppError> {
+    enable_native_prompt(state, &AppType::Mcode, id, target_path)
 }
 
 fn pi_active_prompt_id(

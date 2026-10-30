@@ -6,7 +6,7 @@ MSkills is a local desktop application for managing AI coding tools: providers, 
 
 ## Features
 
-- Manage configurations for Claude Code, Claude Desktop, Codex, Gemini CLI, Grok Build, OpenCode, OpenClaw, Hermes, MiniMax Code and Pi. Available operations differ by tool.
+- Manage configurations for Claude Code, Claude Desktop, Codex, Gemini CLI, Grok Build, OpenCode, OpenClaw, Hermes, MiniMax Code, Pi and [DeepSeek Harness (dsh)](docs/dsh-integration.md). Available operations differ by tool.
 - Install, group, enable and update Skills across selected tools.
 - Manage MCP servers and prompts; browse local sessions and usage.
 - Optionally use the local proxy, model mapping and failover.

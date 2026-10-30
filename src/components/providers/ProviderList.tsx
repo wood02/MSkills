@@ -121,7 +121,7 @@ export function ProviderList({
   // 判断供应商是否已添加到配置（累加模式应用：OpenCode/OpenClaw/Hermes）
   const isProviderInConfig = useCallback(
     (providerId: string): boolean => {
-      if (appId === "mcode")
+      if (appId === "mcode" || appId === "dsh")
         return providers[providerId]?.meta?.liveConfigManaged === true;
       if (appId === "opencode") {
         return opencodeLiveIds?.includes(providerId) ?? false;
@@ -421,7 +421,7 @@ export function ProviderList({
           appId={appId}
           onCreate={appId === "pi" ? undefined : onCreate}
           onImport={
-            appId === "pi" || appId === "mcode"
+            appId === "pi" || appId === "mcode" || appId === "dsh"
               ? undefined
               : () => importMutation.mutate()
           }

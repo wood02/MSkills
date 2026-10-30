@@ -218,6 +218,10 @@ impl Provider {
                 str_at(settings.get("apiKey")),
             ),
             // Pi custom providers use the native models.json field names.
+            AppType::Dsh => (
+                str_at(settings.get("baseURL")),
+                str_at(settings.get("apiKey")),
+            ),
             AppType::Pi => (
                 crate::pi_config::provider_base_url(settings).unwrap_or_default(),
                 str_at(settings.get("apiKey")),

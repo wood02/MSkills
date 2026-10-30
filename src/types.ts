@@ -299,6 +299,7 @@ export interface VisibleApps {
   hermes: boolean;
   pi: boolean;
   mcode: boolean;
+  dsh?: boolean;
 }
 
 // WebDAV 同步状态
@@ -425,6 +426,7 @@ export interface Settings {
   hermesConfigDir?: string;
   // 覆盖 Pi agent 配置目录（可选）
   piConfigDir?: string;
+  dshProfile?: string;
 
   // ===== 当前供应商 ID（设备级）=====
   // 当前 Claude 供应商 ID（优先于数据库 is_current）
@@ -510,6 +512,7 @@ export interface McpServerSpec {
 // v3.7.0: MCP 服务器应用启用状态
 export interface McpApps {
   mcode?: boolean;
+  dsh?: boolean;
   claude: boolean;
   "claude-desktop"?: boolean;
   codex: boolean;

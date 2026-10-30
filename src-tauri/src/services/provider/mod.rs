@@ -5041,6 +5041,33 @@ impl ProviderService {
             }
             return Ok(saved);
         }
+        if app_type == AppType::Dsh {
+            let native = crate::dsh_config::get_providers()?;
+            let mut saved = state.db.get_all_providers("dsh")?;
+            for (id, config) in &native {
+                if !saved.contains_key(id) {
+                    let name = config
+                        .get("displayName")
+                        .and_then(Value::as_str)
+                        .unwrap_or(id);
+                    saved.insert(
+                        id.clone(),
+                        Provider::with_id(id.clone(), name.into(), config.clone(), None),
+                    );
+                }
+            }
+            for (id, provider) in &mut saved {
+                if let Some(config) = native.get(id) {
+                    if let Some(name) = config.get("displayName").and_then(Value::as_str) {
+                        provider.name = name.into();
+                    }
+                    provider.settings_config = config.clone();
+                }
+                Self::set_provider_live_config_managed(provider, native.contains_key(id));
+                state.db.save_provider("dsh", provider)?;
+            }
+            return Ok(saved);
+        }
         state.db.get_all_providers(app_type.as_str())
     }
 
@@ -5077,6 +5104,22 @@ impl ProviderService {
                 }
                 return Err(error);
             }
+        }
+        Ok(true)
+    }
+    fn save_dsh_provider(
+        state: &AppState,
+        provider: &Provider,
+        write_live: bool,
+    ) -> Result<bool, AppError> {
+        if write_live {
+            crate::dsh_config::save_provider_and_commit(
+                &provider.id,
+                provider.settings_config.clone(),
+                || state.db.save_provider("dsh", provider),
+            )?;
+        } else {
+            state.db.save_provider("dsh", provider)?;
         }
         Ok(true)
     }
@@ -5165,6 +5208,9 @@ impl ProviderService {
             return Ok(true);
         }
 
+        if app_type == AppType::Dsh {
+            return Self::save_dsh_provider(state, &provider, add_to_live);
+        }
         if app_type == AppType::Mcode {
             return Self::save_mcode_provider(state, &provider, add_to_live);
         }
@@ -5363,6 +5409,9 @@ impl ProviderService {
             )?;
             Self::set_provider_live_config_managed(&mut provider, live_config_managed);
 
+            if app_type == AppType::Dsh {
+                return Self::save_dsh_provider(state, &provider, live_config_managed);
+            }
             if app_type == AppType::Mcode {
                 return Self::save_mcode_provider(state, &provider, live_config_managed);
             }
@@ -5569,6 +5618,12 @@ impl ProviderService {
             return pi::delete(state, id);
         }
 
+        if app_type == AppType::Dsh {
+            return crate::dsh_config::remove_provider_and_commit(id, || {
+                state.db.delete_provider("dsh", id)
+            });
+        }
+
         // Additive mode apps - no current provider concept
         if app_type.is_additive_mode() {
             // Single DB read shared across all additive-mode sub-paths below.
@@ -5611,6 +5666,7 @@ impl ProviderService {
                     AppType::OpenClaw => remove_openclaw_provider_from_live(id)?,
                     AppType::Hermes => remove_hermes_provider_from_live(id)?,
                     AppType::Mcode => crate::mcode_config::remove_provider(id)?,
+                    AppType::Dsh => crate::dsh_config::remove_provider(id)?,
                     _ => {}
                 }
             }
@@ -5643,6 +5699,16 @@ impl ProviderService {
     ) -> Result<(), AppError> {
         if app_type == AppType::Pi {
             return pi::remove(state, id);
+        }
+
+        if app_type == AppType::Dsh {
+            return crate::dsh_config::remove_provider_and_commit(id, || {
+                if let Some(mut provider) = state.db.get_provider_by_id(id, "dsh")? {
+                    Self::set_provider_live_config_managed(&mut provider, false);
+                    state.db.save_provider("dsh", &provider)?;
+                }
+                Ok(())
+            });
         }
 
         match app_type {
@@ -5681,6 +5747,7 @@ impl ProviderService {
                 remove_hermes_provider_from_live(id)?;
             }
             AppType::Mcode => crate::mcode_config::remove_provider(id)?,
+            AppType::Dsh => crate::dsh_config::remove_provider(id)?,
             _ => {
                 return Err(AppError::Message(format!(
                     "App {} does not support remove from live config",
@@ -5719,6 +5786,17 @@ impl ProviderService {
         let _provider = providers
             .get(id)
             .ok_or_else(|| AppError::Message(format!("供应商 {id} 不存在")))?;
+
+        if app_type == AppType::Dsh {
+            let mut provider = _provider.clone();
+            Self::set_provider_live_config_managed(&mut provider, true);
+            Self::save_dsh_provider(state, &provider, true)?;
+            let mut result = SwitchResult::default();
+            if let Err(error) = McpService::sync_enabled_for_app(state, &AppType::Dsh) {
+                result.warnings.push(error.to_string());
+            }
+            return Ok(result);
+        }
 
         // OMO providers are switched through their own exclusive path.
         if matches!(app_type, AppType::OpenCode) && _provider.category.as_deref() == Some("omo") {
@@ -6050,6 +6128,7 @@ impl ProviderService {
                     AppType::OpenClaw => remove_openclaw_provider_from_live(&provider.id),
                     AppType::Hermes => remove_hermes_provider_from_live(&provider.id),
                     AppType::Mcode => crate::mcode_config::remove_provider(&provider.id),
+                    AppType::Dsh => crate::dsh_config::remove_provider(&provider.id),
                     _ => Ok(()),
                 };
 
@@ -6314,7 +6393,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(&provider.settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
-            AppType::Pi | AppType::Mcode => Ok(String::new()),
+            AppType::Pi | AppType::Mcode | AppType::Dsh => Ok(String::new()),
         }
     }
 
@@ -6332,7 +6411,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
-            AppType::Pi | AppType::Mcode => Ok(String::new()),
+            AppType::Pi | AppType::Mcode | AppType::Dsh => Ok(String::new()),
         }
     }
 
@@ -7098,6 +7177,9 @@ impl ProviderService {
                     ));
                 }
             }
+            AppType::Dsh => {
+                crate::dsh_config::validate_provider(&provider.id, &provider.settings_config)?;
+            }
             AppType::Mcode => {
                 crate::mcode_config::validate_provider(&provider.id, &provider.settings_config)?
             }
@@ -7308,6 +7390,15 @@ impl ProviderService {
 
                 Ok((api_key, base_url))
             }
+            AppType::Dsh => Ok((
+                String::new(),
+                provider
+                    .settings_config
+                    .get("baseURL")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .into(),
+            )),
             AppType::OpenClaw | AppType::Hermes | AppType::Pi | AppType::Mcode => {
                 // These native formats use apiKey and baseUrl directly on the object.
                 let api_key = provider

@@ -379,6 +379,7 @@ const UnifiedSkillsPanel = React.forwardRef<
       hermes: 0,
       pi: 0,
       mcode: 0,
+      dsh: 0,
     };
     filteredSkills.forEach((skill) => {
       for (const app of SKILLS_APP_IDS) {
@@ -1859,6 +1860,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
           hermes: skill.foundIn.includes("hermes"),
           pi: false,
           mcode: skill.foundIn.includes("mcode"),
+          dsh: skill.foundIn.includes("dsh"),
         },
       ]),
     ),
@@ -1888,6 +1890,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
           hermes: false,
           pi: false,
           mcode: false,
+          dsh: false,
         },
       })),
     );

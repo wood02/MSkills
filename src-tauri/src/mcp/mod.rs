@@ -17,7 +17,7 @@ mod gemini;
 mod grokbuild;
 mod hermes;
 mod opencode;
-mod validation;
+pub(crate) mod validation;
 
 // 重新导出公共 API
 pub use claude::{
