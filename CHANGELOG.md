@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.3 - 2026-10-30
+
+- 支持 DeepSeek Harness (dsh)：管理 MCP、全局指令和 Skills，并可浏览本地会话（含 zstd 日志）。
+- 写入 dsh 配置时遵循其原生文件锁，自动清理已退出进程留下的锁；关闭 MCP 时保留原有配置并标记 `disabled`，删除时才移除；切换 profile 后立即同步已启用的 MCP。
+- macOS 安装包改为仅支持 Apple Silicon，不再提供 Intel Mac 版本；Intel Mac 用户请继续使用 v1.0.2，应用内也不会收到本版及后续更新。
+
 ## v1.0.2 - 2026-10-30
 
 - 接通 GitHub Releases 应用内更新：启动检查新版本，展示更新说明，用户确认后下载、验证签名并安装重启。
