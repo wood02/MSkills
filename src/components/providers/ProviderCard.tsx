@@ -231,7 +231,10 @@ export function ProviderCard({
   const isAnyOmo = isOmo || isOmoSlim;
   const handleDisableAnyOmo = isOmoSlim ? onDisableOmoSlim : onDisableOmo;
   const isAdditiveMode =
-    (appId === "opencode" && !isAnyOmo) || appId === "pi" || appId === "mcode";
+    (appId === "opencode" && !isAnyOmo) ||
+    appId === "pi" ||
+    appId === "mcode" ||
+    appId === "dsh";
 
   const { data: health } = useProviderHealth(
     provider.id,
@@ -361,7 +364,10 @@ export function ProviderCard({
     ? isCurrent
     : appId === "openclaw"
       ? Boolean(isDefaultModel)
-      : appId === "opencode" || appId === "pi" || appId === "mcode"
+      : appId === "opencode" ||
+          appId === "pi" ||
+          appId === "mcode" ||
+          appId === "dsh"
         ? false
         : isAutoFailoverEnabled
           ? activeProviderId === provider.id
@@ -709,7 +715,10 @@ export function ProviderCard({
                 // (category === "official") 一律隐藏：它们 base_url 故意留空、走客户端
                 // 默认/OAuth 端点，mskills 没有可靠的探测目标（尤其 Claude Desktop
                 // 官方是原生 1P 模式，根本不在请求路径上）。
-                onTest && appId !== "mcode" && provider.category !== "official"
+                onTest &&
+                appId !== "mcode" &&
+                appId !== "dsh" &&
+                provider.category !== "official"
                   ? () => onTest(provider)
                   : undefined
               }

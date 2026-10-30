@@ -922,7 +922,8 @@
     "openclaw": "OpenClaw",
     "hermes": "Hermes",
     "pi": "Pi",
-    "mcode": "MiniMax Code"
+    "mcode": "MiniMax Code",
+    "dsh": "DeepSeek Harness"
   },
   "pi": {
     "empty": {
@@ -1735,7 +1736,8 @@
       "opencode": "OpenCode",
       "grokbuild": "Grok Build",
       "pi": "Pi",
-      "mcode": "MiniMax Code"
+      "mcode": "MiniMax Code",
+      "dsh": "DeepSeek Harness"
     },
     "rawInputLabel": "Raw",
     "sessionSync": {
@@ -2040,7 +2042,8 @@
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
-        "mcode": "MiniMax Code"
+        "mcode": "MiniMax Code",
+        "dsh": "DeepSeek Harness"
       }
     },
     "userLevelPath": "User-level MCP path",
@@ -3422,5 +3425,15 @@
     "expiredHint": "Run the {{tool}} command to refresh your login",
     "queryFailed": "Query failed",
     "refresh": "Refresh"
+  },
+  "dsh": {
+    "providerId": "Provider ID",
+    "providerIdHint": "Use lowercase letters, digits and hyphens. The ID is permanent; deepseek is reserved for native login.",
+    "keyPlaceholder": "Leave blank to keep the credential reference",
+    "keyHint": "Saved in DSH’s private credential store. apiKeyEnv can also name an existing credential or environment variable.",
+    "configHint": "Native DSH route: api, baseURL, apiKeyEnv and models (array of objects with an id). Protocols: openai-completions, openai-responses, anthropic-messages.",
+    "profile": "DSH profile",
+    "profileHint": "Default: web. Use desktop or the custom profile selected when starting DSH. Providers and MCP use this profile; Skills and Prompts use DSH_HOME.",
+    "profileInvalid": "Use only letters, digits, - and _."
   }
 }

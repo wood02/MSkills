@@ -124,6 +124,7 @@ export const getProviderIconName = (providerId: string) => {
   if (providerId === "grokbuild") return "grok";
   if (providerId === "claude") return "claude";
   if (providerId === "mcode") return "minimax";
+  if (providerId === "dsh") return "deepseek";
   if (providerId === "opencode") return "opencode";
   if (providerId === "openclaw") return "openclaw";
   return providerId;

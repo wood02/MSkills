@@ -6,7 +6,7 @@ MSkills 是一个本地桌面工具，用于集中管理 AI 编程工具的供�
 
 ## 功能
 
-- 管理 Claude Code、Claude Desktop、Codex、Gemini CLI、Grok Build、OpenCode、OpenClaw、Hermes、MiniMax Code 和 Pi 的配置；各工具支持的操作有所不同。
+- 管理 Claude Code、Claude Desktop、Codex、Gemini CLI、Grok Build、OpenCode、OpenClaw、Hermes、MiniMax Code、Pi 和 [DeepSeek Harness（dsh）](docs/dsh-integration.md) 的配置；各工具支持的操作有所不同。
 - 安装、分组、启用和更新 Skills，并同步到选中的工具。
 - 管理 MCP 服务和提示词，查看本地会话及用量。
 - 按需开启本地代理、模型映射和故障转移。

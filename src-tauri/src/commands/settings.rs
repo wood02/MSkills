@@ -68,7 +68,23 @@ pub async fn save_settings(
     let unify_codex_changed =
         merged.unify_codex_session_history != existing.unify_codex_session_history;
     let unify_codex_enabled = merged.unify_codex_session_history;
+    let dsh_profile_changed = crate::dsh_config::profile_name(merged.dsh_profile.as_deref())
+        != crate::dsh_config::profile_name(existing.dsh_profile.as_deref());
     crate::settings::update_settings(merged).map_err(|e| e.to_string())?;
+
+    // 新 profile 的 patch 尚无 MSkills 管理的 MCP，切换后立即投影；失败则回滚 profile。
+    if dsh_profile_changed {
+        if let Err(err) = crate::services::McpService::sync_enabled_for_app(
+            state.inner(),
+            &crate::app_config::AppType::Dsh,
+        ) {
+            log::warn!("切换 DSH profile 后同步 MCP 失败，回滚设置: {err}");
+            if let Err(rollback_err) = crate::settings::update_settings(existing.clone()) {
+                log::error!("回滚 DSH profile 设置失败: {rollback_err}");
+            }
+            return Err(format!("DSH profile 未生效（MCP 同步失败）: {err}"));
+        }
+    }
 
     // 统一会话开关变更时立即重写当前官方 Codex 供应商的 live 配置，
     // 不必等下一次切换才生效。

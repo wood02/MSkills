@@ -284,7 +284,8 @@ function App() {
       sharedFeatureApp !== "gemini" &&
       sharedFeatureApp !== "hermes" &&
       sharedFeatureApp !== "pi" &&
-      sharedFeatureApp !== "mcode"
+      sharedFeatureApp !== "mcode" &&
+      sharedFeatureApp !== "dsh"
     ) {
       setCurrentView("skills");
     }
@@ -378,7 +379,8 @@ function App() {
     sharedFeatureApp === "gemini" ||
     sharedFeatureApp === "hermes" ||
     sharedFeatureApp === "pi" ||
-    sharedFeatureApp === "mcode";
+    sharedFeatureApp === "mcode" ||
+    sharedFeatureApp === "dsh";
   const hasMcpSupport = sharedFeatureApp !== "pi";
 
   const {
@@ -678,7 +680,7 @@ function App() {
   useEffect(() => {
     const checkEnvOnSwitch = async () => {
       try {
-        if (activeApp === "mcode") return;
+        if (activeApp === "mcode" || activeApp === "dsh") return;
         const conflicts = await checkEnvConflicts(activeApp);
 
         if (conflicts.length > 0) {
@@ -821,9 +823,9 @@ function App() {
         await queryClient.invalidateQueries({
           queryKey: hermesKeys.liveProviderIds,
         });
-      } else if (activeApp === "mcode") {
+      } else if (activeApp === "mcode" || activeApp === "dsh") {
         await queryClient.invalidateQueries({
-          queryKey: ["providers", "mcode"],
+          queryKey: ["providers", activeApp],
         });
       }
       toast.success(
@@ -1197,7 +1199,8 @@ function App() {
                         activeApp === "openclaw" ||
                         activeApp === "hermes" ||
                         activeApp === "pi" ||
-                        activeApp === "mcode"
+                        activeApp === "mcode" ||
+                        activeApp === "dsh"
                           ? (provider) =>
                               setConfirmAction({ provider, action: "remove" })
                           : undefined
@@ -1434,6 +1437,7 @@ function App() {
               )}
             {currentView === "providers" &&
               activeApp !== "mcode" &&
+              activeApp !== "dsh" &&
               (settingsData?.showProfileSwitcher ?? true) && (
                 <div
                   className="flex shrink-0 items-center"

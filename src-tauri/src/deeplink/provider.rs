@@ -194,6 +194,11 @@ pub(crate) fn build_provider_from_request(
         AppType::OpenCode => build_opencode_settings(request),
         AppType::OpenClaw => build_additive_app_settings(request),
         AppType::Hermes => build_hermes_settings(request),
+        AppType::Dsh => {
+            return Err(AppError::InvalidInput(
+                "Add DSH providers from the DSH page".into(),
+            ));
+        }
         AppType::Mcode => {
             return Err(AppError::InvalidInput(
                 "Add MCode providers from the MCode page".into(),

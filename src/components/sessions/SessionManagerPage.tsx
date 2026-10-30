@@ -93,7 +93,8 @@ type ProviderFilter =
   | "gemini"
   | "hermes"
   | "pi"
-  | "mcode";
+  | "mcode"
+  | "dsh";
 
 type SessionListViewMode = "flat" | "grouped";
 
@@ -575,7 +576,9 @@ export function SessionManagerPage({ appId }: { appId: string }) {
     () =>
       filteredSessions.filter(
         (session) =>
-          Boolean(session.sourcePath) && session.providerId !== "mcode",
+          Boolean(session.sourcePath) &&
+          session.providerId !== "mcode" &&
+          session.providerId !== "dsh",
       ),
     [filteredSessions],
   );
@@ -592,7 +595,9 @@ export function SessionManagerPage({ appId }: { appId: string }) {
     () =>
       selectedSessions.filter(
         (session) =>
-          Boolean(session.sourcePath) && session.providerId !== "mcode",
+          Boolean(session.sourcePath) &&
+          session.providerId !== "mcode" &&
+          session.providerId !== "dsh",
       ),
     [selectedSessions],
   );
@@ -631,7 +636,9 @@ export function SessionManagerPage({ appId }: { appId: string }) {
   ): GroupSelectionState => {
     const selectableSessions = groupSessions.filter(
       (session) =>
-        Boolean(session.sourcePath) && session.providerId !== "mcode",
+        Boolean(session.sourcePath) &&
+        session.providerId !== "mcode" &&
+        session.providerId !== "dsh",
     );
     const selectedCount = selectableSessions.filter((session) =>
       selectedSessionKeys.has(getSessionKey(session)),
@@ -650,7 +657,12 @@ export function SessionManagerPage({ appId }: { appId: string }) {
   };
 
   const toggleSessionChecked = (session: SessionMeta, checked: boolean) => {
-    if (!session.sourcePath || session.providerId === "mcode") return;
+    if (
+      !session.sourcePath ||
+      session.providerId === "mcode" ||
+      session.providerId === "dsh"
+    )
+      return;
     const key = getSessionKey(session);
     setSelectedSessionKeys((current) => {
       const next = new Set(current);
@@ -669,7 +681,9 @@ export function SessionManagerPage({ appId }: { appId: string }) {
   ) => {
     const selectableSessions = groupSessions.filter(
       (session) =>
-        Boolean(session.sourcePath) && session.providerId !== "mcode",
+        Boolean(session.sourcePath) &&
+        session.providerId !== "mcode" &&
+        session.providerId !== "dsh",
     );
     if (selectableSessions.length === 0) return;
 
@@ -728,7 +742,11 @@ export function SessionManagerPage({ appId }: { appId: string }) {
         selectionMode={selectionMode}
         searchQuery={search}
         isChecked={selectedSessionKeys.has(sessionKey)}
-        isCheckDisabled={!session.sourcePath || session.providerId === "mcode"}
+        isCheckDisabled={
+          !session.sourcePath ||
+          session.providerId === "mcode" ||
+          session.providerId === "dsh"
+        }
         onSelect={setSelectedKey}
         onToggleChecked={(checked) => toggleSessionChecked(session, checked)}
       />
@@ -1197,6 +1215,9 @@ export function SessionManagerPage({ appId }: { appId: string }) {
                               </div>
                             </SelectItem>
                             <SelectItem value="mcode">MiniMax Code</SelectItem>
+                            <SelectItem value="dsh">
+                              DeepSeek Harness
+                            </SelectItem>
                             <SelectItem value="pi">
                               <div className="flex items-center gap-2">
                                 <ProviderIcon icon="pi" name="pi" size={14} />
@@ -1633,6 +1654,7 @@ export function SessionManagerPage({ appId }: { appId: string }) {
                               disabled={
                                 !selectedSession.sourcePath ||
                                 selectedSession.providerId === "mcode" ||
+                                selectedSession.providerId === "dsh" ||
                                 isDeleting
                               }
                             >
