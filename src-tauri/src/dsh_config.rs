@@ -403,7 +403,12 @@ fn update_provider_and_commit<T>(
             AppError::InvalidInput("DSH API key must be a nonempty string".into())
         })?;
         use sha2::{Digest, Sha256};
-        let reference = format!("MSKILLS_DSH_{:x}", Sha256::digest(id.as_bytes()));
+        // Profiles share DSH_HOME credentials, so the reference must not collide across them.
+        let profile_name = profile.file_name().unwrap_or_default().to_string_lossy();
+        let reference = format!(
+            "MSKILLS_DSH_{:x}",
+            Sha256::digest(format!("{profile_name}\0{id}").as_bytes())
+        );
         let mut document = read_yaml(
             &credentials_path,
             serde_yaml::from_str("version: 1\nrefs: {}\n").unwrap(),
@@ -751,6 +756,22 @@ mod tests {
         let credentials = read_yaml(&dir.path().join(".credentials.yaml"), Yaml::Null).unwrap();
         let reference = providers["gateway"]["apiKeyEnv"].as_str().unwrap();
         assert_eq!(credentials["refs"][reference].as_str(), Some("test-key"));
+        let desktop = dir.path().join("profiles/desktop");
+        fs::create_dir_all(&desktop).unwrap();
+        let other = json!({"api":"openai-completions","baseURL":"https://example.com/v1","apiKey":"other-key","models":[{"id":"test"}]});
+        update_provider(dir.path(), &desktop, "gateway", Some(other)).unwrap();
+        let desktop_rows = read_patch(&desktop.join("cordis.patch.yml")).unwrap();
+        let desktop_ref = providers_from_rows(&desktop_rows).unwrap()["gateway"]["apiKeyEnv"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let credentials = read_yaml(&dir.path().join(".credentials.yaml"), Yaml::Null).unwrap();
+        assert_ne!(desktop_ref, reference);
+        assert_eq!(credentials["refs"][reference].as_str(), Some("test-key"));
+        assert_eq!(
+            credentials["refs"][desktop_ref.as_str()].as_str(),
+            Some("other-key")
+        );
         update_provider(dir.path(), &profile, "gateway", None).unwrap();
         assert!(providers_from_rows(&read_patch(&path).unwrap())
             .unwrap()
