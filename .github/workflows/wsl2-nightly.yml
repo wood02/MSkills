@@ -8,7 +8,40 @@ on:
     - cron: "23 18 * * *" # 02:23 Beijing time
   workflow_dispatch:
 
+env:
+  # Must match ci.yml: rust-cache hashes CARGO_* into its key.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
 jobs:
+  # ci.yml lints on Linux only, which never compiles cfg(windows) code.
+  clippy-windows:
+    name: Clippy (Windows)
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: clippy
+
+      - name: Restore Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: backend
+          save-if: false
+
+      - name: Create frontend dist placeholder
+        shell: bash
+        run: mkdir -p dist
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
   backend-windows-wsl2-full:
     name: Backend Full Suite (Windows + WSL2 home)
     runs-on: windows-2025
@@ -28,15 +61,13 @@ jobs:
           distribution: Ubuntu-24.04
           wsl-version: 2
 
-      - name: Cache Cargo registry and build
-        uses: actions/cache@v5
+      # Only ci.yml's pushes to main write this cache.
+      - name: Restore Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          workspaces: src-tauri -> target
+          shared-key: backend
+          save-if: false
 
       - name: Create frontend dist placeholder
         shell: bash
