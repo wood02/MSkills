@@ -65,7 +65,7 @@ GitHub Ruleset 要求所有 main 改动通过 PR，且 `CI Passed` 检查通过�
 
 日常 `pnpm dev` 不需要私钥；本地执行正式打包时，需要在进程环境中设置上述两个变量，不能将私钥写入配置文件或提交到仓库。
 
-发布工作流要求签名私钥，生成 macOS `.tar.gz`、Windows MSI 和 Linux AppImage 的签名。所有平台构建成功后，`scripts/generate-updater-manifest.mjs` 使用客户端内置公钥验证每个更新包及签名，生成包含六个架构入口的 `latest.json`（macOS 两个架构共用 Universal 包），全部上传后才公开 Release。清单更新说明读取 CHANGELOG 中对应 `## vX.Y.Z - 日期` 条目；发版时应将 Unreleased 内容归入该条目。缺少包、签名错误或签名密钥不匹配均阻止发布。
+发布工作流要求签名私钥，生成 macOS `.tar.gz`、Windows MSI 和 Linux AppImage 的签名。所有平台构建成功后，`scripts/generate-updater-manifest.mjs` 使用客户端内置公钥验证每个更新包及签名，生成包含五个架构入口的 `latest.json`（macOS 只有 `darwin-aarch64`），全部上传后才公开 Release。清单更新说明读取 CHANGELOG 中对应 `## vX.Y.Z - 日期` 条目；发版时应将 Unreleased 内容归入该条目。缺少包、签名错误或签名密钥不匹配均阻止发布。
 
 R2 镜像默认关闭；首次发布不依赖镜像服务。需要时再配置 `R2_MIRROR_ENABLED`、桶、公开地址和相关 Secrets，并单独验证同步触发及清单。
 
