@@ -799,6 +799,9 @@
     "hermesConfigDirDescription": "Hermes の設定ディレクトリ（config.yaml）を上書きします。",
     "piConfigDir": "Pi 設定ディレクトリ",
     "piConfigDirDescription": "Pi の設定ディレクトリ（models.json、指示ファイル、プロンプト、Skills、セッション）を上書きします。",
+    "dshConfigDir": "DSH 設定ディレクトリ",
+    "dshConfigDirDescription": "DSH クライアントが使用するルートディレクトリを選択します。空欄の場合は DSH_HOME、未設定時は ~/.dsh を使用します。ファイルの移動や DSH クライアントの設定変更は行いません。",
+    "browsePlaceholderDsh": "例: /home/<your-username>/.dsh",
     "browsePlaceholderClaude": "例: /home/<your-username>/.claude",
     "browsePlaceholderCodex": "例: /home/<your-username>/.codex",
     "browsePlaceholderGemini": "例: /home/<your-username>/.gemini",
@@ -2659,6 +2662,8 @@
     "foundIn": "発見場所",
     "local": "ローカル",
     "uninstallConfirm": "「{{name}}」をアンインストールしますか？すべてのアプリからこのスキルが削除され、削除前にローカルバックアップが自動作成されます。",
+    "bulkEnableConfirm": "現在の絞り込み結果のうち、{{app}} で無効な {{count}} 個のスキルを有効にしますか？",
+    "bulkDisableConfirm": "現在の絞り込み結果のうち、{{app}} で有効な {{count}} 個のスキルを無効にしますか？",
     "uninstallInMainPanel": "メインパネルからスキルをアンインストールしてください",
     "notFound": "スキルが見つかりません",
     "backup": {
@@ -2802,7 +2807,7 @@
       "details": "{{count}} 回 · {{sessions}} セッション\n手動 {{manual}} 回 · Agent {{agent}} 回",
       "lastUsed": "最終使用：{{time}}",
       "disabledWithUsage": "現在は無効ですが、この期間に使用記録があります",
-      "estimated": "Codex は明示的な選択と成功した SKILL.md 読み取りから推定します。同じターンの重複読み取りは1回として集計します。",
+      "estimated": "Codex は明示的な選択と成功した SKILL.md 読み取りから推定します。同じターンの重複読み取りは1回として集計します。Claude プラグインには hook の読み込みも含まれ、セッションの開始・圧縮・再開ごとに1回と数えます。",
       "callsTitle": "呼び出し回数",
       "pluginSkills": "プラグインのスキル",
       "pluginSkillCount": "{{count}} 個のスキル",
@@ -3433,7 +3438,7 @@
     "keyHint": "キーは dsh の非公開認証情報ファイルに保存されます。apiKeyEnv には既存の認証情報名や環境変数名も指定できます。",
     "configHint": "dsh のネイティブ形式：api、baseURL、apiKeyEnv、models（id を持つオブジェクトの配列）。対応プロトコル：openai-completions、openai-responses、anthropic-messages。",
     "profile": "DSH プロファイル",
-    "profileHint": "既定は web。デスクトップ版は desktop、カスタム構成は起動時の profile 名を指定します。プロバイダーと MCP はこのプロファイル、Skills と Prompts は DSH_HOME を使用します。",
+    "profileHint": "既定は web。デスクトップ版では desktop、カスタム構成では起動時に選択した profile を指定します。プロバイダーと MCP はこのプロファイル、Skills と Prompts は DSH 設定ルートを使用します。",
     "profileInvalid": "英数字、- と _ のみ使用できます。"
   }
 }

@@ -13,8 +13,15 @@ use std::{
 };
 
 pub(crate) fn home_dir() -> PathBuf {
-    let home = get_home_dir();
+    crate::settings::get_dsh_override_dir().unwrap_or_else(default_home_dir)
+}
+
+pub(crate) fn default_home_dir() -> PathBuf {
     let value = std::env::var("DSH_HOME").unwrap_or_default();
+    resolve_default_home_dir(get_home_dir(), &value)
+}
+
+fn resolve_default_home_dir(home: PathBuf, value: &str) -> PathBuf {
     let value = value.trim();
     if value.is_empty() {
         home.join(".dsh")
@@ -697,6 +704,25 @@ pub(crate) fn import_mcp(state: &crate::store::AppState) -> Result<usize, AppErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dsh_default_home_preserves_environment_and_tilde_paths() {
+        let home = std::env::temp_dir().join("dsh-home-test");
+        assert_eq!(
+            resolve_default_home_dir(home.clone(), "  "),
+            home.join(".dsh")
+        );
+        assert_eq!(
+            resolve_default_home_dir(home.clone(), " ~/custom-dsh "),
+            home.join("custom-dsh")
+        );
+        assert_eq!(resolve_default_home_dir(home.clone(), "~"), home);
+        let custom = std::env::temp_dir().join("dsh-custom-root");
+        assert_eq!(
+            resolve_default_home_dir(home, custom.to_str().unwrap()),
+            custom
+        );
+    }
+
     #[test]
     fn dsh_rolls_back_patch_credentials_and_mcp_when_commit_fails() {
         let dir = tempfile::tempdir().unwrap();

@@ -50,13 +50,36 @@ describe("Skill usage scan snapshots", () => {
     data.records = [
       data.records[0],
       { ...data.records[0], app: "claude", count: 2 },
-      { ...data.records[0], skillName: "hidden", count: 50 },
+      { ...data.records[0], skillName: "hidden", count: 2 },
     ];
     expect(skillUsageTotals(data, new Set(["example"]))).toEqual({
       codex: 5,
       claude: 2,
     });
-    expect(skillUsageTotals(data, new Set(["hidden"]))).toEqual({ codex: 50 });
+    expect(skillUsageTotals(data, new Set(["hidden"]))).toEqual({ codex: 2 });
+  });
+
+  it("adds a plugin's hook loads to its Skills' calls without counting them twice", () => {
+    const data = snapshot(false, 2);
+    data.records = [
+      data.records[0],
+      { ...data.records[0], skillName: "plugin:one", count: 2 },
+      { ...data.records[0], skillName: "plugin:two", count: 7 },
+    ];
+    data.pluginHookRecords = [
+      { ...data.records[0], skillName: "plugin", count: 1 },
+      { ...data.records[0], skillName: "example", count: 9 },
+    ];
+    expect(skillUsageTotals(data, new Set(["example", "plugin:one"]))).toEqual({
+      codex: 5,
+    });
+    expect(skillUsageTotals(data, new Set(["example"]))).toEqual({ codex: 2 });
+    expect(skillUsageTotals(data, new Set(["plugin:two"]))).toEqual({
+      codex: 8,
+    });
+    expect(
+      skillUsageTotals(data, new Set(["plugin:one", "plugin:two"])),
+    ).toEqual({ codex: 10 });
   });
 
   it("distinguishes unavailable usage from a completed range with no matching calls", () => {

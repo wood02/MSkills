@@ -142,6 +142,8 @@ export interface SkillUsageSnapshot {
   filesTotal: number;
   error: string | null;
   records: SkillUsageSummary[];
+  /** Hook loads per plugin and agent; Skill calls remain in records for filtering */
+  pluginHookRecords?: SkillUsageSummary[];
   /** Installed plugin Skills (`plugin:skill`) to description, including unused ones */
   pluginSkills?: Record<string, string>;
   /** Plugin name to description */

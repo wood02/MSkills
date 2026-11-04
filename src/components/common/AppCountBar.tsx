@@ -37,6 +37,7 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
   const bulkTotalCount = totalCount ?? 0;
   const hasPendingBulkToggle = pendingApp !== undefined && pendingApp !== null;
   const renderCount = (app: AppId) => {
+    const label = app === "dsh" ? "DSH" : APP_ICON_MAP[app].label;
     const count = counts[app] ?? 0;
     const allEnabled =
       bulkToggleEnabled && bulkTotalCount > 0 && count >= bulkTotalCount;
@@ -54,7 +55,7 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
           variant="secondary"
           className={APP_ICON_MAP[app].badgeClass}
         >
-          <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
+          <span className="opacity-75">{label}:</span>
           <span className="font-bold ml-1">
             {formatCount?.(app, count) ?? count}
           </span>
@@ -90,7 +91,7 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
           pending && "cursor-wait disabled:cursor-wait",
         )}
       >
-        <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
+        <span className="opacity-75">{label}:</span>
         <span className="ml-1 inline-flex items-baseline gap-1 font-bold tabular-nums">
           {formatCount?.(app, count) ?? count}
         </span>

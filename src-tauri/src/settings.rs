@@ -467,6 +467,8 @@ pub struct AppSettings {
     pub hermes_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsh_config_dir: Option<String>,
 
     // ===== 当前供应商 ID（设备级）=====
     /// 当前 Claude 供应商 ID（本地存储，优先于数据库 is_current）
@@ -588,6 +590,7 @@ impl Default for AppSettings {
             openclaw_config_dir: None,
             hermes_config_dir: None,
             pi_config_dir: None,
+            dsh_config_dir: None,
             current_provider_claude: None,
             current_provider_claude_desktop: None,
             current_provider_codex: None,
@@ -672,6 +675,13 @@ impl AppSettings {
 
         self.pi_config_dir = self
             .pi_config_dir
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        self.dsh_config_dir = self
+            .dsh_config_dir
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
@@ -817,6 +827,13 @@ pub fn get_settings_for_frontend() -> AppSettings {
 
 pub fn update_settings(mut new_settings: AppSettings) -> Result<(), AppError> {
     new_settings.normalize_paths();
+    if let Some(path) = &new_settings.dsh_config_dir {
+        if !resolve_override_path(path).is_absolute() {
+            return Err(AppError::InvalidInput(
+                "DSH configuration directory must be an absolute path".into(),
+            ));
+        }
+    }
     save_settings_file(&new_settings)?;
 
     let mut guard = settings_store().write().unwrap_or_else(|e| {
@@ -1007,6 +1024,14 @@ pub fn get_pi_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
     settings
         .pi_config_dir
+        .as_ref()
+        .map(|path| resolve_override_path(path))
+}
+
+pub fn get_dsh_override_dir() -> Option<PathBuf> {
+    let settings = settings_store().read().ok()?;
+    settings
+        .dsh_config_dir
         .as_ref()
         .map(|path| resolve_override_path(path))
 }
@@ -1299,5 +1324,30 @@ mod tests {
             resolve_override_path(r"~\pi\agent"),
             home.join("pi").join("agent")
         );
+    }
+
+    #[test]
+    fn dsh_directory_setting_normalizes_and_round_trips() {
+        let mut settings: AppSettings = serde_json::from_value(serde_json::json!({
+            "dshConfigDir": "  ~/custom-dsh  "
+        }))
+        .unwrap();
+        settings.normalize_paths();
+        assert_eq!(settings.dsh_config_dir.as_deref(), Some("~/custom-dsh"));
+        assert_eq!(
+            serde_json::to_value(&settings).unwrap()["dshConfigDir"],
+            "~/custom-dsh"
+        );
+        settings.dsh_config_dir = Some("  ".into());
+        settings.normalize_paths();
+        assert!(settings.dsh_config_dir.is_none());
+        assert!(serde_json::to_value(settings)
+            .unwrap()
+            .get("dshConfigDir")
+            .is_none());
+        assert!(serde_json::from_value::<AppSettings>(serde_json::json!({}))
+            .unwrap()
+            .dsh_config_dir
+            .is_none());
     }
 }

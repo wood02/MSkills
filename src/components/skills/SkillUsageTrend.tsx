@@ -44,6 +44,8 @@ export function SkillUsageTrend({
       visible.reduce((sum, record) => sum + (record.buckets[index] ?? 0), 0),
     );
   const max = Math.max(1, ...totals);
+  // Keep 12px bars in both ranges; extra day buckets extend left of the counter.
+  const chartWidth = totals.length * 12 + Math.max(0, totals.length - 1) * 3;
   const unsupported = hoveredApp && !(hoveredApp in skillUsageColor);
   const usageAvailable = !unsupported && status?.completed && !status.error;
   const showCount = !unsupported && (count > 0 || usageAvailable);
@@ -69,7 +71,8 @@ export function SkillUsageTrend({
           );
   return (
     <div
-      className="flex h-8 w-40 shrink-0 items-center gap-2"
+      className="flex h-8 shrink-0 items-center gap-2"
+      style={{ width: `calc(${chartWidth}px + 3.5rem)` }}
       data-testid="skill-usage-trend"
     >
       {showCount ? (
@@ -102,10 +105,12 @@ export function SkillUsageTrend({
                     );
               const details = tooltipApps.map((app) => ({
                 app,
-                count:
-                  visible.find((record) => record.app === app)?.buckets[
-                    index
-                  ] ?? 0,
+                count: visible.reduce(
+                  (sum, record) =>
+                    sum +
+                    (record.app === app ? (record.buckets[index] ?? 0) : 0),
+                  0,
+                ),
               }));
               const totalLabel = t("skills.usage.bucketTotal", {
                 count: total,
@@ -141,7 +146,7 @@ export function SkillUsageTrend({
                       >
                         {visible.map((record) => (
                           <span
-                            key={record.app}
+                            key={`${record.app}:${record.skillName}`}
                             data-usage-segment={record.app}
                             className={
                               skillUsageColor[

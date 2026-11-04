@@ -625,6 +625,16 @@ impl Database {
                         }
                         Self::set_user_version(conn, 23)?;
                     }
+                    23 => {
+                        // Rescan to pick up plugin hook loads; events replay idempotently.
+                        if Self::table_exists(conn, "skill_usage_sync")? {
+                            conn.execute_batch("DELETE FROM skill_usage_sync;")
+                                .map_err(|e| {
+                                    AppError::Database(format!("重置 Skill 使用统计失败: {e}"))
+                                })?;
+                        }
+                        Self::set_user_version(conn, 24)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"

@@ -799,6 +799,9 @@
     "hermesConfigDirDescription": "覆盖 Hermes 配置目录 (config.yaml)。",
     "piConfigDir": "Pi 配置目录",
     "piConfigDirDescription": "覆盖 Pi 配置目录（models.json、指令文件、提示词、Skills 与会话）。",
+    "dshConfigDir": "DSH 配置目录",
+    "dshConfigDirDescription": "选择 DSH 客户端实际使用的根目录。留空时遵循 DSH_HOME，未设置时使用 ~/.dsh；修改此项不会搬迁文件或更改 DSH 客户端设置。",
+    "browsePlaceholderDsh": "例如：/home/<你的用户名>/.dsh",
     "browsePlaceholderClaude": "例如：/home/<你的用户名>/.claude",
     "browsePlaceholderCodex": "例如：/home/<你的用户名>/.codex",
     "browsePlaceholderGemini": "例如：/home/<你的用户名>/.gemini",
@@ -2709,6 +2712,8 @@
     "foundIn": "发现于",
     "local": "本地",
     "uninstallConfirm": "确定要卸载技能 \"{{name}}\" 吗？这将从所有应用中移除该技能，并在删除前自动创建本地备份。",
+    "bulkEnableConfirm": "将为 {{app}} 启用当前筛选结果中尚未启用的 {{count}} 个技能。是否继续？",
+    "bulkDisableConfirm": "将为 {{app}} 停用当前筛选结果中已启用的 {{count}} 个技能。是否继续？",
     "uninstallInMainPanel": "请在主面板中卸载技能",
     "notFound": "未找到技能",
     "backup": {
@@ -2802,7 +2807,7 @@
       "details": "{{count}} 次使用 · {{sessions}} 个会话\n手动 {{manual}} 次 · Agent {{agent}} 次",
       "lastUsed": "最近使用：{{time}}",
       "disabledWithUsage": "当前已关闭，但所选时间范围内有使用记录",
-      "estimated": "Codex 为估算：依据显式选择和成功读取 SKILL.md 的记录，同一回合重复读取合并统计。",
+      "estimated": "Codex 为估算：依据显式选择和成功读取 SKILL.md 的记录，同一回合重复读取合并统计。Claude 插件还包含 hook 加载，每次启动、压缩或恢复会话算一次。",
       "callsTitle": "调用次数",
       "pluginSkills": "插件技能",
       "pluginSkillCount": "{{count}} 个技能",
@@ -3433,7 +3438,7 @@
     "keyHint": "密钥保存到 dsh 的私有凭据文件。apiKeyEnv 也可填写已有凭据名或环境变量名。",
     "configHint": "使用 dsh 原生格式：api、baseURL、apiKeyEnv 和 models（包含 id 的对象数组）。协议支持 openai-completions、openai-responses、anthropic-messages。",
     "profile": "DSH 配置档案",
-    "profileHint": "默认 web。桌面版填写 desktop，自定义配置填写启动 dsh 时选择的 profile。供应商和 MCP 使用此档案；Skills 和 Prompts 使用 DSH_HOME。",
+    "profileHint": "默认 web。桌面版填写 desktop，自定义配置填写启动 dsh 时选择的 profile。供应商和 MCP 使用此档案；Skills 和 Prompts 使用 DSH 配置根目录。",
     "profileInvalid": "只能包含字母、数字、- 和 _。"
   }
 }

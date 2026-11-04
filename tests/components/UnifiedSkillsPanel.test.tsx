@@ -465,12 +465,35 @@ describe("UnifiedSkillsPanel", () => {
     );
   });
 
+  it("excludes hidden plugin Skills from totals and group charts after searching", async () => {
+    installedSkillsMock = [];
+    usageDataMock.day.records = [
+      usageRecord("plugin:one", 2),
+      usageRecord("plugin:two", 7),
+    ];
+    usageDataMock.day.pluginHookRecords = [usageRecord("plugin", 1)];
+    renderPanel();
+    const user = userEvent.setup();
+    const total = screen.getByRole("button", { name: /skills\.usage\.today/ });
+    expect(total).toHaveTextContent("10");
+
+    await user.type(
+      screen.getByRole("textbox", { name: "skills.installedSearchAriaLabel" }),
+      "plugin:one",
+    );
+    expect(total).toHaveTextContent("3");
+    expect(screen.getByTestId("skill-usage-trend")).toHaveTextContent(
+      "3skills.usage.times",
+    );
+  });
+
   it("lists used plugin Skills separately and counts them in the totals", async () => {
     installedSkillsMock = [makeInstalledSkill()];
     usageDataMock.day!.records = [
       usageRecord("alpha-skill", 2),
       usageRecord("ponytail:ponytail-review", 5),
     ];
+    usageDataMock.day!.pluginHookRecords = [usageRecord("ponytail", 1)];
     usageDataMock.day!.pluginSkills = {
       "ponytail:ponytail-gain": "Show measured savings",
       "ponytail:ponytail-review": "",
@@ -530,7 +553,12 @@ describe("UnifiedSkillsPanel", () => {
     expect(screen.getByText("Show measured savings")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /skills\.usage\.today/ }),
-    ).toHaveTextContent("7");
+    ).toHaveTextContent("8");
+    expect(
+      screen
+        .getAllByTestId("skill-usage-trend")
+        .map((trend) => trend.textContent),
+    ).toContain("6skills.usage.times");
     await user.type(
       screen.getByRole("textbox", { name: "skills.installedSearchAriaLabel" }),
       "alpha",
@@ -1032,6 +1060,8 @@ describe("UnifiedSkillsPanel", () => {
       screen.getByRole("combobox", { name: "skills.filter.repo" }),
     ).toHaveTextContent("skills.usage.allSources");
     await user.click(appCountControl("Claude"));
+    expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -1093,6 +1123,8 @@ describe("UnifiedSkillsPanel", () => {
     expect(screen.getByText("Repo B Skill")).toBeInTheDocument();
     expect(screen.queryByText("Local Skill")).not.toBeInTheDocument();
     await user.click(appCountControl("Claude"));
+    expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -1112,6 +1144,8 @@ describe("UnifiedSkillsPanel", () => {
 
     const user = userEvent.setup();
     await user.click(appCountControl("Claude"));
+    expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -1131,6 +1165,8 @@ describe("UnifiedSkillsPanel", () => {
 
     const user = userEvent.setup();
     await user.click(appCountControl("Claude"));
+    expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -1154,12 +1190,89 @@ describe("UnifiedSkillsPanel", () => {
 
     const user = userEvent.setup();
     await user.click(appCountControl("Claude"));
+    expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
 
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalledWith("common.bulkToggleFailed", {
         description: "Error: permission denied",
       });
     });
+  });
+
+  it.each([true, false])(
+    "requires confirmation before setting all skills to %s",
+    async (enabled) => {
+      installedSkillsMock = [
+        makeInstalledSkill({ id: "first-id", apps: { claude: !enabled } }),
+        makeInstalledSkill({ id: "second-id", apps: { claude: !enabled } }),
+      ];
+      renderPanel();
+      const user = userEvent.setup();
+      const title = enabled
+        ? "common.enableAllForApp"
+        : "common.disableAllForApp";
+      const message = enabled
+        ? "skills.bulkEnableConfirm"
+        : "skills.bulkDisableConfirm";
+
+      await user.click(appCountControl("Claude"));
+      expect(screen.getByRole("dialog", { name: title })).toBeInTheDocument();
+      expect(screen.getByText(message)).toBeInTheDocument();
+      expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+
+      await user.click(appCountControl("Claude"));
+      await user.click(screen.getByRole("button", { name: "common.cancel" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+
+      await user.click(appCountControl("Claude"));
+      await user.click(screen.getByRole("button", { name: "common.confirm" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(bulkToggleSkillAppMock).toHaveBeenCalledTimes(1);
+      expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
+        ids: ["first-id", "second-id"],
+        app: "claude",
+        enabled,
+      });
+    },
+  );
+
+  it("keeps bulk confirmation locked until the write completes", async () => {
+    installedSkillsMock = [makeInstalledSkill({ id: "first-id" })];
+    let resolveToggle!: (value: {
+      succeeded: string[];
+      failed: never[];
+    }) => void;
+    bulkToggleSkillAppMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveToggle = resolve;
+      }),
+    );
+    renderPanel();
+    const user = userEvent.setup();
+    await user.click(appCountControl("Claude"));
+    await user.click(screen.getByRole("button", { name: "common.confirm" }));
+    expect(
+      screen.getByRole("button", { name: "common.confirm" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "common.cancel" }),
+    ).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(bulkToggleSkillAppMock).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      resolveToggle({ succeeded: ["first-id"], failed: [] }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it.each(["single", "bulk"] as const)(

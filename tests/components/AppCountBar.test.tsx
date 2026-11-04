@@ -10,6 +10,29 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("AppCountBar", () => {
+  it.each([false, true])(
+    "uses DSH as the compact badge label (interactive: %s)",
+    (interactive) => {
+      render(
+        <AppCountBar
+          totalLabel="2 items"
+          counts={{ dsh: 1 }}
+          appIds={["dsh"]}
+          totalCount={interactive ? 2 : undefined}
+          onToggleAll={interactive ? vi.fn() : undefined}
+        />,
+      );
+      expect(screen.getByText("DSH:")).toBeInTheDocument();
+      if (interactive) {
+        expect(
+          screen.getByRole("checkbox", {
+            name: "common.enableAllForApp:DeepSeek Harness",
+          }),
+        ).toBeInTheDocument();
+      }
+    },
+  );
+
   it("shows enabled and usage together while bulk toggles depend only on enabled count", () => {
     const onToggleAll = vi.fn();
     render(

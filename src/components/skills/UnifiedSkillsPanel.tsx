@@ -131,6 +131,17 @@ function formatSkillBackupDate(unixSeconds: number): string {
     : date.toLocaleString();
 }
 
+function groupUsageRecords(records: SkillUsageSummary[] = []) {
+  const grouped = new Map<string, SkillUsageSummary[]>();
+  for (const record of records) {
+    const rows = grouped.get(record.skillName) ?? [];
+    rows.push(record);
+    rows.sort((a, b) => a.app.localeCompare(b.app));
+    grouped.set(record.skillName, rows);
+  }
+  return grouped;
+}
+
 const UnifiedSkillsPanel = React.forwardRef<
   UnifiedSkillsPanelHandle,
   UnifiedSkillsPanelProps
@@ -391,16 +402,14 @@ const UnifiedSkillsPanel = React.forwardRef<
     return counts;
   }, [filteredSkills]);
 
-  const usageRecords = useMemo(() => {
-    const grouped = new Map<string, SkillUsageSummary[]>();
-    for (const record of usageSnapshot?.records ?? []) {
-      const rows = grouped.get(record.skillName) ?? [];
-      rows.push(record);
-      rows.sort((a, b) => a.app.localeCompare(b.app));
-      grouped.set(record.skillName, rows);
-    }
-    return grouped;
-  }, [usageSnapshot]);
+  const usageRecords = useMemo(
+    () => groupUsageRecords(usageSnapshot?.records),
+    [usageSnapshot],
+  );
+  const pluginHookRecords = useMemo(
+    () => groupUsageRecords(usageSnapshot?.pluginHookRecords),
+    [usageSnapshot],
+  );
 
   const sortedSkills = useMemo(() => {
     const counts = new Map(
@@ -469,16 +478,22 @@ const UnifiedSkillsPanel = React.forwardRef<
       groups.set(plugin, skills);
     }
     return [...groups]
-      .map(([plugin, skills]) => ({
-        plugin,
-        skills: skills.sort(
-          (a, b) => b.count - a.count || a.name.localeCompare(b.name),
-        ),
-        rows: skills.flatMap((skill) => skill.rows),
-        count: skills.reduce((sum, skill) => sum + skill.count, 0),
-      }))
+      .map(([plugin, skills]) => {
+        const rows = [
+          ...skills.flatMap((skill) => skill.rows),
+          ...(pluginHookRecords.get(plugin) ?? []),
+        ];
+        return {
+          plugin,
+          skills: skills.sort(
+            (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+          ),
+          rows,
+          count: rows.reduce((sum, row) => sum + row.count, 0),
+        };
+      })
       .sort((a, b) => b.count - a.count || a.plugin.localeCompare(b.plugin));
-  }, [pluginSkillNames, usageRecords]);
+  }, [pluginSkillNames, usageRecords, pluginHookRecords]);
 
   const usageSkillNames = useMemo(
     () =>
@@ -522,36 +537,57 @@ const UnifiedSkillsPanel = React.forwardRef<
     }
   };
 
-  const handleToggleAll = async (app: AppId, enabled: boolean) => {
-    if (!skills || !beginWrite()) return;
+  const handleToggleAll = (app: AppId, enabled: boolean) => {
+    if (
+      !skills ||
+      interactionBlocked ||
+      writeLockRef.current ||
+      checkUpdatesLockRef.current
+    )
+      return;
 
     const ids = filteredSkills
       .filter((skill) => Boolean(skill.apps[app]) !== enabled)
       .map((skill) => skill.id);
-    if (ids.length === 0) {
-      endWrite();
-      return;
-    }
+    if (ids.length === 0) return;
 
-    try {
-      const result = await bulkToggleAppMutation.mutateAsync({
-        ids,
-        app,
-        enabled,
-      });
-      if (result.failed.length > 0) {
-        toast.error(
-          t("common.bulkToggleFailed", { count: result.failed.length }),
-          { description: String(result.failed[0].error) },
-        );
-      }
-    } catch (error) {
-      toast.error(t("common.bulkToggleFailed", { count: ids.length }), {
-        description: String(error),
-      });
-    } finally {
-      endWrite();
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: t(enabled ? "common.enableAllForApp" : "common.disableAllForApp", {
+        app: APP_ICON_MAP[app].label,
+      }),
+      message: t(
+        enabled ? "skills.bulkEnableConfirm" : "skills.bulkDisableConfirm",
+        {
+          app: APP_ICON_MAP[app].label,
+          count: ids.length,
+        },
+      ),
+      variant: enabled ? "info" : "destructive",
+      onConfirm: async () => {
+        if (!beginWrite(true)) return;
+        try {
+          const result = await bulkToggleAppMutation.mutateAsync({
+            ids,
+            app,
+            enabled,
+          });
+          if (result.failed.length > 0) {
+            toast.error(
+              t("common.bulkToggleFailed", { count: result.failed.length }),
+              { description: String(result.failed[0].error) },
+            );
+          }
+        } catch (error) {
+          toast.error(t("common.bulkToggleFailed", { count: ids.length }), {
+            description: String(error),
+          });
+        } finally {
+          setConfirmDialog(null);
+          endWrite();
+        }
+      },
+    });
   };
 
   const handleUninstall = (skill: InstalledSkill) => {

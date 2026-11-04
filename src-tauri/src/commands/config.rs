@@ -169,7 +169,7 @@ pub async fn get_claude_code_config_path() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_config_dir(app: String) -> Result<String, String> {
+pub async fn get_config_dir(app: String, use_default: Option<bool>) -> Result<String, String> {
     let dir = match AppType::from_str(&app).map_err(|e| e.to_string())? {
         AppType::Claude => config::get_claude_config_dir(),
         AppType::ClaudeDesktop => {
@@ -181,6 +181,7 @@ pub async fn get_config_dir(app: String) -> Result<String, String> {
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
         AppType::Hermes => crate::hermes_config::get_hermes_dir(),
+        AppType::Dsh if use_default.unwrap_or(false) => crate::dsh_config::default_home_dir(),
         AppType::Dsh => crate::dsh_config::home_dir(),
         AppType::Pi => crate::pi_config::get_pi_agent_dir().map_err(|e| e.to_string())?,
         AppType::Mcode => crate::mcode_config::config_path()

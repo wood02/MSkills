@@ -799,6 +799,9 @@
     "hermesConfigDirDescription": "Override Hermes configuration directory (config.yaml).",
     "piConfigDir": "Pi Configuration Directory",
     "piConfigDirDescription": "Override the Pi configuration directory (models.json, instruction files, prompts, skills, and sessions).",
+    "dshConfigDir": "DSH Configuration Directory",
+    "dshConfigDirDescription": "Select the root directory used by your DSH client. Leave blank to follow DSH_HOME, or ~/.dsh when unset. This does not move files or change the DSH client settings.",
+    "browsePlaceholderDsh": "e.g., /home/<your-username>/.dsh",
     "browsePlaceholderClaude": "e.g., /home/<your-username>/.claude",
     "browsePlaceholderCodex": "e.g., /home/<your-username>/.codex",
     "browsePlaceholderGemini": "e.g., /home/<your-username>/.gemini",
@@ -2659,6 +2662,8 @@
     "foundIn": "Found in",
     "local": "Local",
     "uninstallConfirm": "Are you sure you want to uninstall \"{{name}}\"? This will remove the skill from all apps and create a local backup first.",
+    "bulkEnableConfirm": "Enable {{count}} currently disabled skills for {{app}} in the current filtered results?",
+    "bulkDisableConfirm": "Disable {{count}} currently enabled skills for {{app}} in the current filtered results?",
     "uninstallInMainPanel": "Please uninstall skills from the main panel",
     "notFound": "Skill not found",
     "backup": {
@@ -2802,7 +2807,7 @@
       "details": "{{count}} uses · {{sessions}} sessions\nManual {{manual}} · Agent {{agent}}",
       "lastUsed": "Last used: {{time}}",
       "disabledWithUsage": "Disabled now, with usage recorded in this period",
-      "estimated": "Codex is estimated from explicit selections and successful SKILL.md reads. Repeated reads in one turn count once.",
+      "estimated": "Codex is estimated from explicit selections and successful SKILL.md reads. Repeated reads in one turn count once. Claude plugins also count hook loads: each session start, compact or resume counts once.",
       "callsTitle": "Calls",
       "pluginSkills": "Plugin Skills",
       "pluginSkillCount": "{{count}} skills",
@@ -3433,7 +3438,7 @@
     "keyHint": "Saved in DSH’s private credential store. apiKeyEnv can also name an existing credential or environment variable.",
     "configHint": "Native DSH route: api, baseURL, apiKeyEnv and models (array of objects with an id). Protocols: openai-completions, openai-responses, anthropic-messages.",
     "profile": "DSH profile",
-    "profileHint": "Default: web. Use desktop or the custom profile selected when starting DSH. Providers and MCP use this profile; Skills and Prompts use DSH_HOME.",
+    "profileHint": "Defaults to web. Use desktop for the desktop app, or the profile chosen when starting dsh. Providers and MCP use this profile; Skills and Prompts use the DSH configuration root.",
     "profileInvalid": "Use only letters, digits, - and _."
   }
 }

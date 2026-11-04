@@ -72,8 +72,13 @@ pub fn request_scan(db: Arc<Database>) -> Result<(), String> {
             if let Ok(mut state) = scan_state().lock() {
                 state.status.files_total = files.len();
             }
+            let hook_plugins = plugin_catalog(&[(
+                "claude",
+                crate::config::get_claude_config_dir().join("plugins/cache"),
+            )])
+            .hook_plugins;
             for (index, (app, path)) in files.iter().enumerate() {
-                if let Err(error) = sync_file(&db, app, path) {
+                if let Err(error) = sync_file(&db, app, path, &hook_plugins) {
                     log::warn!("[SKILL-USAGE] {}: {error}", path.display());
                     failed += 1;
                 }
@@ -131,6 +136,10 @@ fn collect_files(
         }
     }
 }
+
+const SESSION_HOOK: &str = "session_hook";
+/// One session start writes a row per hook of a plugin, a few seconds apart.
+const HOOK_LOAD_WINDOW_SECS: i64 = 60;
 
 #[derive(Default, Serialize, Deserialize)]
 struct Context {
@@ -193,6 +202,8 @@ struct PluginCatalog {
     plugins: BTreeMap<String, String>,
     skills: BTreeMap<String, String>,
     sources: BTreeMap<String, BTreeSet<PluginSource>>,
+    /// SessionStart hook log label to plugin; `None` when several plugins share the label.
+    hook_plugins: HashMap<String, Option<String>>,
 }
 
 /// Where a plugin is installed: the agent, the marketplace it came from, and what it ships.
@@ -271,6 +282,7 @@ fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
                             })
                             .unwrap_or_default();
                         catalog.plugins.insert(plugin_name.to_string(), description);
+                        add_hook_labels(&version, plugin_name, &mut catalog.hook_plugins);
                         let commands = fs::read_dir(version.join("commands"))
                             .into_iter()
                             .flatten()
@@ -298,6 +310,49 @@ fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
         }
     }
     catalog
+}
+
+/// Claude logs a hook by its `statusMessage`, or else by its command and args.
+fn add_hook_labels(version: &Path, plugin: &str, labels: &mut HashMap<String, Option<String>>) {
+    for entry in fs::read_dir(version.join("hooks"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let Some(config) = fs::read_to_string(entry.path())
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        else {
+            continue;
+        };
+        let groups = config["hooks"]["SessionStart"].as_array().into_iter();
+        for hook in groups
+            .flatten()
+            .flat_map(|group| group["hooks"].as_array().into_iter().flatten())
+        {
+            let label = hook["statusMessage"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| {
+                    let args = hook["args"].as_array().into_iter().flatten();
+                    let words: Vec<_> = hook["command"]
+                        .as_str()
+                        .into_iter()
+                        .chain(args.filter_map(Value::as_str))
+                        .collect();
+                    (!words.is_empty()).then(|| words.join(" "))
+                });
+            let Some(label) = label else { continue };
+            labels
+                .entry(label)
+                .and_modify(|owner| {
+                    if owner.as_deref() != Some(plugin) {
+                        *owner = None;
+                    }
+                })
+                .or_insert_with(|| Some(plugin.to_string()));
+        }
+    }
 }
 
 /// Plugin Skills match by `plugin:skill`; any other namespaced call falls back to a managed Skill.
@@ -493,6 +548,41 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
     events
 }
 
+/// A plugin loaded by a successful SessionStart hook; resume and compact restarts merge per session.
+/// Only the plugin name is stored: hook commands can be long and hold private paths.
+fn session_hook_event(
+    row: &Value,
+    context: &Context,
+    hook_plugins: &HashMap<String, Option<String>>,
+) -> Option<Event> {
+    let hook = &row["attachment"];
+    if row["type"] != "attachment"
+        || hook["hookEvent"] != "SessionStart"
+        || hook["exitCode"].as_i64() != Some(0)
+        || context.session.is_empty()
+    {
+        return None;
+    }
+    let plugin = hook["pluginId"]
+        .as_str()
+        .and_then(|id| id.split('@').next())
+        .or_else(|| hook_plugins.get(hook["command"].as_str()?)?.as_deref())?;
+    let at = timestamp(&row["timestamp"])?;
+    // Keep each load so a session resumed days later still counts in that later range.
+    let id = format!("claude:hook:{}:{plugin}:{at}", context.session);
+    Some(Event {
+        dedup: id.clone(),
+        id,
+        skill: plugin.to_string(),
+        app: "claude".to_string(),
+        session: context.session.clone(),
+        turn: String::new(),
+        at,
+        source: "agent",
+        evidence: SESSION_HOOK,
+    })
+}
+
 // Tokenize simple shell commands split at `;`, `|`, `&` and newlines; never inspect output or execute log content.
 fn shell_words(command: &str) -> Vec<Vec<String>> {
     let mut commands = vec![Vec::new()];
@@ -626,7 +716,12 @@ fn fingerprint(file: &mut File, offset: u64) -> Result<String, String> {
     Ok(format!("{:x}", Sha256::digest(tail)))
 }
 
-fn sync_file(db: &Database, app: &str, path: &Path) -> Result<(), String> {
+fn sync_file(
+    db: &Database,
+    app: &str,
+    path: &Path,
+    hook_plugins: &HashMap<String, Option<String>>,
+) -> Result<(), String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     let modified = crate::services::session_usage::metadata_modified_nanos(&metadata);
@@ -668,7 +763,12 @@ fn sync_file(db: &Database, app: &str, path: &Path) -> Result<(), String> {
         }
         let id = format!("{:x}", Sha256::digest(&bytes));
         match serde_json::from_slice::<Value>(&bytes) {
-            Ok(row) => events.extend(parse_line(&row, app, &mut context, &id)),
+            Ok(row) => {
+                events.extend(parse_line(&row, app, &mut context, &id));
+                if app == "claude" {
+                    events.extend(session_hook_event(&row, &context, hook_plugins));
+                }
+            }
             Err(_) if bytes.iter().all(u8::is_ascii_whitespace) => {}
             // A corrupt line costs only itself; it must not keep the whole scan from completing.
             Err(error) => log::warn!(
@@ -722,12 +822,50 @@ pub struct SkillUsageSummary {
     session_ids: BTreeSet<String>,
 }
 
+fn add_usage(
+    summaries: &mut HashMap<(String, String), SkillUsageSummary>,
+    name: String,
+    app: String,
+    session: &str,
+    at: i64,
+    manual: bool,
+    boundaries: &[i64],
+) {
+    let summary = summaries
+        .entry((name.clone(), app.clone()))
+        .or_insert_with(|| SkillUsageSummary {
+            skill_name: name,
+            app,
+            count: 0,
+            sessions: 0,
+            last_used: at,
+            manual_count: 0,
+            agent_count: 0,
+            buckets: vec![0; boundaries.len() - 1],
+            session_ids: BTreeSet::new(),
+        });
+    summary.count += 1;
+    summary.last_used = summary.last_used.max(at);
+    summary.session_ids.insert(session.to_string());
+    summary.sessions = summary.session_ids.len();
+    if manual {
+        summary.manual_count += 1;
+    } else {
+        summary.agent_count += 1;
+    }
+    if let Some(bucket) = boundaries.windows(2).position(|p| at >= p[0] && at < p[1]) {
+        summary.buckets[bucket] += 1;
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillUsageSnapshot {
     #[serde(flatten)]
     status: ScanStatus,
     records: Vec<SkillUsageSummary>,
+    /// Hook loads per plugin and agent; Skill calls remain in `records` for filtering.
+    plugin_hook_records: Vec<SkillUsageSummary>,
     /// Installed plugin Skills and their descriptions, so unused ones can still show 0.
     plugin_skills: BTreeMap<String, String>,
     plugin_descriptions: BTreeMap<String, String>,
@@ -746,16 +884,6 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
     {
         return Err("Invalid usage time range".to_string());
     }
-    let installed = db.get_all_installed_skills().map_err(|e| e.to_string())?;
-    let managed: HashSet<_> = installed
-        .values()
-        .filter_map(|skill| {
-            Path::new(&skill.directory)
-                .file_name()?
-                .to_str()
-                .and_then(name)
-        })
-        .collect();
     let catalog = plugin_catalog(&[
         (
             "claude",
@@ -766,50 +894,76 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
             crate::codex_config::get_codex_config_dir().join("plugins/cache"),
         ),
     ]);
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    let mut statement = conn.prepare("SELECT skill_name, app, session_id, used_at, source FROM skill_usage_events WHERE used_at>=?1 AND used_at<?2").map_err(|e| e.to_string())?;
-    let rows = statement
-        .query_map(params![boundaries[0], boundaries.last().unwrap()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, String>(4)?,
-            ))
+    usage_with_catalog(db, boundaries, catalog)
+}
+
+fn usage_with_catalog(
+    db: &Database,
+    boundaries: &[i64],
+    catalog: PluginCatalog,
+) -> Result<SkillUsageSnapshot, String> {
+    let installed = db.get_all_installed_skills().map_err(|e| e.to_string())?;
+    let managed: HashSet<_> = installed
+        .values()
+        .filter_map(|skill| {
+            Path::new(&skill.directory)
+                .file_name()?
+                .to_str()
+                .and_then(name)
         })
+        .collect();
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    // Check predecessors outside the selected range too, so midnight never splits one load.
+    let mut statement = conn
+        .prepare(
+            "SELECT e.skill_name, e.app, e.session_id, e.used_at, e.source, e.evidence
+             FROM skill_usage_events e
+             WHERE e.used_at>=?1 AND e.used_at<?2
+               AND (e.evidence<>?3 OR NOT EXISTS (
+                 SELECT 1 FROM skill_usage_events previous
+                 WHERE previous.evidence=?3 AND previous.app=e.app
+                   AND previous.session_id=e.session_id AND previous.skill_name=e.skill_name
+                   AND previous.used_at>e.used_at-?4 AND previous.used_at<e.used_at
+               ))",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map(
+            params![
+                boundaries[0],
+                boundaries.last().unwrap(),
+                SESSION_HOOK,
+                HOOK_LOAD_WINDOW_SECS
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            },
+        )
         .map_err(|e| e.to_string())?;
     let mut summaries = HashMap::new();
+    let mut plugin_hook_summaries = HashMap::new();
     for row in rows {
-        let (skill, app, session, at, source) = row.map_err(|e| e.to_string())?;
-        let Some(skill) = resolve_skill(&skill, &managed, &catalog.skills) else {
-            continue;
-        };
-        let summary = summaries
-            .entry((skill.clone(), app.clone()))
-            .or_insert_with(|| SkillUsageSummary {
-                skill_name: skill,
-                app,
-                count: 0,
-                sessions: 0,
-                last_used: at,
-                manual_count: 0,
-                agent_count: 0,
-                buckets: vec![0; boundaries.len() - 1],
-                session_ids: BTreeSet::new(),
-            });
-        summary.count += 1;
-        summary.last_used = summary.last_used.max(at);
-        summary.session_ids.insert(session);
-        summary.sessions = summary.session_ids.len();
-        if source == "manual" {
-            summary.manual_count += 1;
+        let (name, app, session, at, source, evidence) = row.map_err(|e| e.to_string())?;
+        let manual = source == "manual";
+        let (summaries, name) = if evidence == SESSION_HOOK {
+            if !catalog.plugins.contains_key(&name) {
+                continue;
+            }
+            (&mut plugin_hook_summaries, name)
         } else {
-            summary.agent_count += 1;
-        }
-        if let Some(bucket) = boundaries.windows(2).position(|p| at >= p[0] && at < p[1]) {
-            summary.buckets[bucket] += 1;
-        }
+            let Some(skill) = resolve_skill(&name, &managed, &catalog.skills) else {
+                continue;
+            };
+            (&mut summaries, skill)
+        };
+        add_usage(summaries, name, app, &session, at, manual, boundaries);
     }
     Ok(SkillUsageSnapshot {
         status: scan_state()
@@ -818,6 +972,7 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
             .status
             .clone(),
         records: summaries.into_values().collect(),
+        plugin_hook_records: plugin_hook_summaries.into_values().collect(),
         plugin_skills: catalog.skills,
         plugin_descriptions: catalog.plugins,
         plugin_sources: catalog.sources,
@@ -1121,12 +1276,12 @@ mod tests {
                 command("read-2", "turn-1", "cat /skills/archify/SKILL.md", 0),
             ],
         );
-        sync_file(&db, "codex", &path).unwrap();
-        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
         let mut next = command("read-3", "turn-2", "cat /skills/archify/SKILL.md", 0);
         next["timestamp"] = json!("2026-10-16T02:00:00Z");
         append(&path, &[next]);
-        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
         let snapshot = get_usage(&db, &[1792108800, 1792116000, 1792123200]).unwrap();
         assert_eq!(snapshot.records.len(), 1);
         let row = &snapshot.records[0];
@@ -1146,6 +1301,186 @@ mod tests {
         );
     }
 
+    fn hook_row(session: &str, attachment: Value) -> Value {
+        json!({"type":"attachment","sessionId":session,"timestamp":"2026-10-16T01:00:00Z","attachment":attachment})
+    }
+
+    #[test]
+    fn session_hooks_count_each_load_toward_their_plugin() {
+        let (db, dir, path) = setup();
+        let official = dir.path().join("cache/market/ponytail/1.0");
+        fs::create_dir_all(official.join("skills/ponytail")).unwrap();
+        fs::write(
+            official.join("skills/ponytail/SKILL.md"),
+            "---
+name: x
+---
+",
+        )
+        .unwrap();
+        fs::create_dir_all(official.join("hooks")).unwrap();
+        fs::write(
+            official.join("hooks/hooks.json"),
+            json!({"hooks":{"SessionStart":[{"hooks":[
+                {"command":"node -e secret","statusMessage":"Loading ponytail"},
+                {"command":"ponytail","args":["hook","start"]}
+            ]}]}})
+            .to_string(),
+        )
+        .unwrap();
+        let labels = plugin_catalog(&[("claude", dir.path().join("cache"))]).hook_plugins;
+        let hook = |session, command: &str, exit: i32| {
+            hook_row(
+                session,
+                json!({"type":"hook_success","hookEvent":"SessionStart","command":command,"exitCode":exit}),
+            )
+        };
+        append(
+            &path,
+            &[
+                hook("s1", "Loading ponytail", 0),
+                // A second hook of the same start, in the same second.
+                hook("s1", "ponytail hook start", 0),
+                // Another hook of that start, seconds later: still one load.
+                {
+                    let mut row = hook("s1", "ponytail hook start", 0);
+                    row["timestamp"] = json!("2026-10-16T01:00:30Z");
+                    row
+                },
+                hook("s2", "ponytail hook start", 1),
+                hook("s3", "some user script", 0),
+                hook_row(
+                    "s4",
+                    json!({"type":"hook_success","hookEvent":"PreToolUse","command":"Loading ponytail","exitCode":0}),
+                ),
+                hook_row(
+                    "s5",
+                    json!({"type":"async_hook_response","hookEvent":"SessionStart","pluginId":"ponytail@market","command":"x","exitCode":0}),
+                ),
+                json!({"type":"assistant","sessionId":"s1","timestamp":"2026-10-16T01:01:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"ponytail:ponytail"}}]}}),
+                json!({"type":"assistant","sessionId":"s6","timestamp":"2026-10-16T01:01:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Skill","input":{"skill":"ponytail:ponytail"}}]}}),
+            ],
+        );
+        sync_file(&db, "claude", &path, &labels).unwrap();
+        let stored: i64 = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM skill_usage_events WHERE evidence='session_hook'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, 3);
+
+        let snapshot = usage_with_catalog(
+            &db,
+            &[1792108800, 1792195200],
+            plugin_catalog(&[("claude", dir.path().join("cache"))]),
+        )
+        .unwrap();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].skill_name, "ponytail:ponytail");
+        assert_eq!(snapshot.records[0].count, 2);
+        assert_eq!(snapshot.plugin_hook_records.len(), 1);
+        let plugin = &snapshot.plugin_hook_records[0];
+        assert_eq!(plugin.skill_name, "ponytail");
+        assert_eq!(plugin.count, 2, "the hook loads of s1 and s5");
+        assert_eq!(plugin.sessions, 2);
+        assert_eq!(plugin.buckets, vec![2]);
+
+        append(
+            &path,
+            &[
+                json!({"type":"attachment","sessionId":"s1","timestamp":"2026-10-17T01:00:00Z","attachment":{"type":"hook_success","hookEvent":"SessionStart","command":"Loading ponytail","exitCode":0}}),
+            ],
+        );
+        sync_file(&db, "claude", &path, &labels).unwrap();
+        let next_day = usage_with_catalog(
+            &db,
+            &[1792195200, 1792281600],
+            plugin_catalog(&[("claude", dir.path().join("cache"))]),
+        )
+        .unwrap();
+        assert_eq!(
+            next_day.plugin_hook_records[0].count, 1,
+            "a resumed session is another load"
+        );
+    }
+
+    #[test]
+    fn hook_loads_crossing_midnight_have_the_same_counts_in_every_range() {
+        let (db, _dir, path) = setup();
+        let rows: Vec<_> = [
+            "2026-10-16T23:59:20Z",
+            "2026-10-16T23:59:50Z",
+            "2026-10-17T00:00:10Z",
+            "2026-10-17T01:00:00Z",
+        ]
+        .into_iter()
+        .map(|at| {
+            let mut row = hook_row(
+                "session",
+                json!({"type":"hook_success","hookEvent":"SessionStart","pluginId":"ponytail@market","exitCode":0}),
+            );
+            row["timestamp"] = json!(at);
+            row
+        })
+        .collect();
+        append(&path, &rows);
+        sync_file(&db, "claude", &path, &HashMap::new()).unwrap();
+        let catalog = || PluginCatalog {
+            plugins: BTreeMap::from([("ponytail".into(), String::new())]),
+            ..Default::default()
+        };
+        let previous = usage_with_catalog(&db, &[1792108800, 1792195200], catalog()).unwrap();
+        let today = usage_with_catalog(&db, &[1792195200, 1792281600], catalog()).unwrap();
+        let combined =
+            usage_with_catalog(&db, &[1792108800, 1792195200, 1792281600], catalog()).unwrap();
+        assert_eq!(today.plugin_hook_records[0].count, 1);
+        assert_eq!(previous.plugin_hook_records[0].count, 1);
+        assert_eq!(combined.plugin_hook_records[0].count, 2);
+        assert_eq!(combined.plugin_hook_records[0].buckets, vec![1, 1]);
+        assert_eq!(today.plugin_hook_records[0].buckets, vec![1]);
+    }
+
+    #[test]
+    fn hook_labels_shared_by_plugins_stay_unattributed() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = json!({"hooks":{"SessionStart":[{"hooks":[{"command":"node run.js"}]}]}});
+        for plugin in ["one", "two"] {
+            let path = dir.path().join(plugin).join("hooks");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("hooks.json"), config.to_string()).unwrap();
+        }
+        let mut labels = HashMap::new();
+        add_hook_labels(&dir.path().join("one"), "one", &mut labels);
+        add_hook_labels(&dir.path().join("one"), "one", &mut labels);
+        assert_eq!(labels["node run.js"].as_deref(), Some("one"));
+        add_hook_labels(&dir.path().join("two"), "two", &mut labels);
+        assert_eq!(labels["node run.js"], None);
+    }
+
+    #[test]
+    fn migration_rescans_for_hook_records_and_keeps_existing_events() {
+        let db = Database::memory().unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch("INSERT INTO skill_usage_events VALUES
+                ('codex:x:ponytail','codex:s:t:ponytail','ponytail','codex','s','t',30,'agent','skill_file_read');
+            INSERT INTO skill_usage_sync VALUES ('f',1,1,1,'x','{}');
+            PRAGMA user_version=23;").unwrap();
+        Database::apply_schema_migrations_on_conn(&conn).unwrap();
+        let count = |table: &str| -> i64 {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(count("skill_usage_sync"), 0);
+        assert_eq!(count("skill_usage_events"), 1);
+    }
+
     #[test]
     fn partial_tail_archiving_rewrites_and_fork_replays_do_not_double_count() {
         let (db, dir, path) = setup();
@@ -1153,8 +1488,8 @@ mod tests {
         let text = row.to_string();
         let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
         write!(file, "{}", &text[..text.len() / 2]).unwrap();
-        sync_file(&db, "codex", &path).unwrap();
-        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
         let count = |db: &Database| {
             db.conn
                 .lock()
@@ -1166,12 +1501,12 @@ mod tests {
         };
         assert_eq!(count(&db), 0);
         writeln!(file, "{}", &text[text.len() / 2..]).unwrap();
-        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
         let archived = dir.path().join("archived.jsonl");
         fs::copy(&path, &archived).unwrap();
-        sync_file(&db, "codex", &archived).unwrap();
+        sync_file(&db, "codex", &archived, &HashMap::new()).unwrap();
         fs::write(&path, fs::read(&archived).unwrap()).unwrap();
-        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
         let fork = dir.path().join("fork.jsonl");
         append(
             &fork,
@@ -1180,7 +1515,7 @@ mod tests {
                 row,
             ],
         );
-        sync_file(&db, "codex", &fork).unwrap();
+        sync_file(&db, "codex", &fork, &HashMap::new()).unwrap();
         assert_eq!(
             db.conn
                 .lock()
@@ -1206,8 +1541,8 @@ mod tests {
                 0,
             )],
         );
-        sync_file(&db, "codex", &path).unwrap();
-        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
+        sync_file(&db, "codex", &path, &HashMap::new()).unwrap();
         let snapshot = get_usage(&db, &[1792108800, 1792195200]).unwrap();
         assert_eq!(snapshot.records[0].count, 1);
     }
@@ -1222,7 +1557,7 @@ mod tests {
                 json!({"type":"user","sessionId":"session","uuid":"u2","timestamp":"2026-10-16T01:00:00Z","message":{"role":"user","content":"<command-name>/plugin:archify</command-name>"}}),
             ],
         );
-        sync_file(&db, "claude", &path).unwrap();
+        sync_file(&db, "claude", &path, &HashMap::new()).unwrap();
         let snapshot = get_usage(&db, &[1792108800, 1792195200]).unwrap();
         assert_eq!(snapshot.records.len(), 1);
         assert_eq!(snapshot.records[0].skill_name, "archify");

@@ -272,7 +272,15 @@ export const handlers = [
   ),
 
   http.post(`${TAURI_ENDPOINT}/get_config_dir`, async ({ request }) => {
-    const { app } = await withJson<{ app: AppId }>(request);
+    const { app, useDefault } = await withJson<{
+      app: AppId;
+      useDefault?: boolean;
+    }>(request);
+    if (app === "dsh") {
+      return success(
+        (!useDefault && getSettings().dshConfigDir) || "/default/dsh",
+      );
+    }
     return success(app === "claude" ? "/default/claude" : "/default/codex");
   }),
 
