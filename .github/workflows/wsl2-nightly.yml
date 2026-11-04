@@ -92,10 +92,11 @@ jobs:
         # Calling Cargo after changing TEMP can rebuild and break link.exe/mt.exe.
         shell: pwsh
         run: |
-          cargo test --locked --tests --manifest-path src-tauri/Cargo.toml --no-run --message-format=json > "$env:RUNNER_TEMP/test-artifacts.jsonl"
+          cargo test --locked --tests --manifest-path src-tauri/Cargo.toml --no-run --message-format=json-render-diagnostics > "$env:RUNNER_TEMP/test-artifacts.jsonl"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Windows-to-WSL2 filesystem contract
+        working-directory: src-tauri
         shell: pwsh
         run: |
           $env:TEMP = $env:MSKILLS_WSL_TEST_TEMP
@@ -118,6 +119,7 @@ jobs:
           }
 
       - name: Run full test suite against WSL2-backed home
+        working-directory: src-tauri
         shell: pwsh
         run: |
           $env:TEMP = $env:MSKILLS_WSL_TEST_TEMP
