@@ -14,12 +14,24 @@ test("Windows shards cover every integration target exactly once, including new 
     "support",
   ];
   const assigned = ["1/3", "2/3", "3/3"].flatMap((suite) => {
-    const args = testArgs(suite, targets);
+    const args = testArgs(suite, targets).filter((arg) => arg !== "--bins");
     assert(args.length > 0);
     return args.filter((_, index) => index % 2 === 1);
   });
   assert.deepEqual(assigned.sort(), targets.sort());
-  assert.deepEqual(testArgs("unit", targets), ["--lib", "--bins"]);
+  assert.deepEqual(testArgs("unit", targets), ["--lib"]);
+  assert.deepEqual(
+    testArgs("integration", targets)
+      .filter((arg) => !arg.startsWith("--"))
+      .sort(),
+    targets.sort(),
+  );
+  assert.equal(
+    ["1/3", "2/3", "3/3"]
+      .flatMap((suite) => testArgs(suite, targets))
+      .filter((arg) => arg === "--bins").length,
+    1,
+  );
   assert.deepEqual(testArgs("all", targets), []);
   assert.throws(() => testArgs("4/3", targets));
   assert.throws(() => testArgs("1/3", []), /Empty shard/);

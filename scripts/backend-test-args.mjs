@@ -14,7 +14,10 @@ const seconds = {
 
 export function testArgs(suite, targets) {
   if (suite === "all") return [];
-  if (suite === "unit") return ["--lib", "--bins"];
+  if (suite === "unit") return ["--lib"];
+  if (suite === "integration") {
+    return ["--bins", ...targets.flatMap((name) => ["--test", name])];
+  }
   assert.match(suite, /^[1-3]\/3$/, "Expected all, unit or 1/3..3/3");
   const shards = Array.from({ length: 3 }, () => ({ names: [], seconds: 0 }));
   for (const name of [...targets].sort(
@@ -26,7 +29,11 @@ export function testArgs(suite, targets) {
   }
   const names = shards[Number(suite[0]) - 1].names;
   assert(names.length, "Empty shard would fall back to running every test");
-  return names.flatMap((name) => ["--test", name]);
+  // Integration tests already build the normal library; keep binary tests there.
+  return [
+    ...(suite === "3/3" ? ["--bins"] : []),
+    ...names.flatMap((name) => ["--test", name]),
+  ];
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
