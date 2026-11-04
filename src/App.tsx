@@ -187,7 +187,7 @@ const getInitialView = (): View => {
 };
 
 // 供应商管理已移除：这四个视图作为顶部常驻导航，技能页为首页
-const MAIN_VIEWS: View[] = ["skills", "prompts", "sessions", "mcp"];
+const MAIN_VIEWS: View[] = ["skills", "mcp", "prompts", "sessions"];
 
 function App() {
   const { t } = useTranslation();
@@ -1830,6 +1830,7 @@ function App() {
                         skillsButtonTitle,
                         <Sparkles key="i" className="w-4 h-4" />,
                       ],
+                      ["mcp", t("mcp.title"), <McpIcon key="i" size={16} />],
                       [
                         "prompts",
                         t("prompts.manage"),
@@ -1840,7 +1841,6 @@ function App() {
                         t("sessionManager.title"),
                         <History key="i" className="w-4 h-4" />,
                       ],
-                      ["mcp", t("mcp.title"), <McpIcon key="i" size={16} />],
                     ] as const
                   ).map(([view, title, icon]) => (
                     <Button

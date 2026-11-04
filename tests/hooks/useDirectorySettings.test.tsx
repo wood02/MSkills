@@ -65,16 +65,19 @@ describe("useDirectorySettings", () => {
     );
 
     getAppConfigDirOverrideMock.mockResolvedValue(null);
-    getConfigDirMock.mockImplementation(async (app: string) => {
-      if (app === "claude") return "/remote/claude";
-      if (app === "codex") return "/remote/codex";
-      if (app === "gemini") return "/remote/gemini";
-      if (app === "grokbuild") return "/remote/grok";
-      if (app === "opencode") return "/remote/opencode";
-      if (app === "openclaw") return "/remote/openclaw";
-      if (app === "pi") return "/remote/pi";
-      return "/remote/hermes";
-    });
+    getConfigDirMock.mockImplementation(
+      async (app: string, useDefault?: boolean) => {
+        if (app === "dsh") return useDefault ? "/env/dsh" : "/remote/dsh";
+        if (app === "claude") return "/remote/claude";
+        if (app === "codex") return "/remote/codex";
+        if (app === "gemini") return "/remote/gemini";
+        if (app === "grokbuild") return "/remote/grok";
+        if (app === "opencode") return "/remote/opencode";
+        if (app === "openclaw") return "/remote/openclaw";
+        if (app === "pi") return "/remote/pi";
+        return "/remote/hermes";
+      },
+    );
     selectConfigDirectoryMock.mockReset();
   });
 
@@ -98,6 +101,7 @@ describe("useDirectorySettings", () => {
       openclaw: "/remote/openclaw",
       hermes: "/remote/hermes",
       pi: "/remote/pi",
+      dsh: "/remote/dsh",
     });
   });
 
@@ -266,5 +270,29 @@ describe("useDirectorySettings", () => {
     expect(result.current.resolvedDirs.grokbuild).toBe("/server/grok");
     expect(result.current.resolvedDirs.opencode).toBe("/server/opencode");
     expect(result.current.resolvedDirs.openclaw).toBe("/server/openclaw");
+  });
+
+  it("browses DSH and resets to the backend environment default", async () => {
+    selectConfigDirectoryMock.mockResolvedValue("  /picked/dsh  ");
+    const { result } = renderHook(() =>
+      useDirectorySettings({ settings: createSettings(), onUpdateSettings }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => result.current.browseDirectory("dsh"));
+    expect(selectConfigDirectoryMock).toHaveBeenCalledWith("/remote/dsh");
+    expect(onUpdateSettings).toHaveBeenCalledWith({
+      dshConfigDir: "/picked/dsh",
+    });
+    expect(result.current.resolvedDirs.dsh).toBe("/picked/dsh");
+
+    await act(async () => result.current.resetDirectory("dsh"));
+    expect(onUpdateSettings).toHaveBeenLastCalledWith({
+      dshConfigDir: undefined,
+    });
+    expect(result.current.resolvedDirs.dsh).toBe("/env/dsh");
+    expect(getConfigDirMock).toHaveBeenCalledWith("dsh", true);
+
+    act(() => result.current.resetAllDirectories({ dsh: "/saved/dsh" }));
+    expect(result.current.resolvedDirs.dsh).toBe("/saved/dsh");
   });
 });

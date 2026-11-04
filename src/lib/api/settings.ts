@@ -65,8 +65,8 @@ export const settingsApi = {
     return await invoke("is_portable_mode");
   },
 
-  async getConfigDir(appId: AppId): Promise<string> {
-    return await invoke("get_config_dir", { app: appId });
+  async getConfigDir(appId: AppId, useDefault?: boolean): Promise<string> {
+    return await invoke("get_config_dir", { app: appId, useDefault });
   },
 
   async openConfigFolder(appId: AppId): Promise<void> {

@@ -8,6 +8,108 @@ use std::fs;
 mod support;
 use support::{create_test_state, ensure_test_home, reset_test_fs, test_mutex};
 
+#[tokio::test]
+async fn dsh_directory_override_routes_native_features_and_can_be_reset() {
+    let _guard = test_mutex().lock().unwrap();
+    reset_test_fs();
+    let state = create_test_state().unwrap();
+    let default_dir = mskills_lib::get_config_dir("dsh".into(), Some(true))
+        .await
+        .unwrap();
+    let custom = tempfile::tempdir().unwrap();
+    let mut settings = mskills_lib::get_settings().await.unwrap();
+    settings.dsh_config_dir = Some(format!("  {}  ", custom.path().display()));
+    mskills_lib::update_settings(settings).unwrap();
+
+    assert_eq!(
+        mskills_lib::get_config_dir("dsh".into(), None)
+            .await
+            .unwrap(),
+        custom.path().to_string_lossy()
+    );
+    assert_eq!(
+        mskills_lib::get_config_dir("dsh".into(), Some(true))
+            .await
+            .unwrap(),
+        default_dir
+    );
+    let provider = Provider::with_id(
+        "gateway".into(),
+        "Gateway".into(),
+        json!({"api":"openai-completions","baseURL":"https://example.com/v1","apiKey":"test-only-key","models":[{"id":"model"}]}),
+        None,
+    );
+    ProviderService::add(&state, AppType::Dsh, provider, true).unwrap();
+    assert!(custom
+        .path()
+        .join("profiles/web/cordis.patch.yml")
+        .is_file());
+    assert!(custom.path().join(".credentials.yaml").is_file());
+
+    McpService::upsert_server(
+        &state,
+        McpServer {
+            id: "echo".into(),
+            name: "Echo".into(),
+            server: json!({"command":"echo"}),
+            apps: McpApps {
+                dsh: true,
+                ..Default::default()
+            },
+            description: None,
+            homepage: None,
+            docs: None,
+            tags: vec![],
+        },
+    )
+    .unwrap();
+    assert!(
+        fs::read_to_string(custom.path().join("profiles/web/cordis.patch.yml"))
+            .unwrap()
+            .contains("serverName: echo")
+    );
+
+    let prompt: Prompt = serde_json::from_value(
+        json!({"id":"custom","name":"Custom","content":"Custom root instructions","enabled":false}),
+    )
+    .unwrap();
+    PromptService::upsert_prompt(&state, AppType::Dsh, "custom", prompt).unwrap();
+    PromptService::enable_prompt(&state, AppType::Dsh, "custom").unwrap();
+    assert_eq!(
+        fs::read_to_string(custom.path().join("AGENTS.md")).unwrap(),
+        "Custom root instructions"
+    );
+    let skill =
+        SkillService::create_local_skill(&state.db, "custom-dsh-skill", "Custom root").unwrap();
+    SkillService::toggle_app(&state.db, &skill.id, &AppType::Dsh, true).unwrap();
+    assert!(custom
+        .path()
+        .join("skills/custom-dsh-skill/SKILL.md")
+        .is_file());
+
+    let mut settings = mskills_lib::get_settings().await.unwrap();
+    settings.dsh_config_dir = Some("relative/dsh".into());
+    assert!(mskills_lib::update_settings(settings).is_err());
+    assert_eq!(
+        SkillService::get_app_skills_dir(&AppType::Dsh).unwrap(),
+        custom.path().join("skills")
+    );
+
+    let mut settings = mskills_lib::get_settings().await.unwrap();
+    settings.dsh_config_dir = Some("  ".into());
+    mskills_lib::update_settings(settings).unwrap();
+    assert_eq!(
+        mskills_lib::get_config_dir("dsh".into(), None)
+            .await
+            .unwrap(),
+        default_dir
+    );
+    assert!(custom
+        .path()
+        .join("skills/custom-dsh-skill/SKILL.md")
+        .is_file());
+}
+
 #[test]
 fn dsh_provider_mcp_prompt_and_skill_group_lifecycle() {
     let _guard = test_mutex().lock().unwrap();

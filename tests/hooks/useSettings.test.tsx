@@ -15,6 +15,7 @@ const getCurrentMock = vi.fn();
 const getAllMock = vi.fn();
 const getQueryDataMock = vi.fn();
 const invalidatePiDirectoryCachesMock = vi.fn();
+const invalidateQueriesMock = vi.fn();
 const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
@@ -60,6 +61,7 @@ vi.mock("@tanstack/react-query", async () => {
     ...actual,
     useQueryClient: () => ({
       getQueryData: (...args: unknown[]) => getQueryDataMock(...args),
+      invalidateQueries: (...args: unknown[]) => invalidateQueriesMock(...args),
     }),
   };
 });
@@ -152,6 +154,7 @@ describe("useSettings hook", () => {
     clearClaudeOnboardingSkipMock.mockReset();
     syncCurrentProvidersLiveMock.mockReset();
     invalidatePiDirectoryCachesMock.mockReset();
+    invalidateQueriesMock.mockReset();
     getCurrentMock.mockReset();
     getAllMock.mockReset();
     getQueryDataMock.mockReset();
@@ -376,6 +379,24 @@ describe("useSettings hook", () => {
     expect(payload.piConfigDir).toBe("/custom/pi");
     expect(syncCurrentProvidersLiveMock).not.toHaveBeenCalled();
     expect(invalidatePiDirectoryCachesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves the DSH directory and refreshes dependent data without migrating files", async () => {
+    settingsFormMock.settings.dshConfigDir = "  /custom/dsh  ";
+    const { result } = renderHook(() => useSettings());
+    await act(async () =>
+      result.current.saveSettings(undefined, { silent: true }),
+    );
+    expect(mutateAsyncMock.mock.calls[0][0].dshConfigDir).toBe("/custom/dsh");
+    expect(syncCurrentProvidersLiveMock).not.toHaveBeenCalled();
+    for (const queryKey of [
+      ["providers", "dsh"],
+      ["mcp"],
+      ["skills"],
+      ["sessions"],
+    ]) {
+      expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey });
+    }
   });
 
   it("shows toast when Claude plugin sync fails but continues flow", async () => {

@@ -5,11 +5,11 @@ import { SkillUsageTrend } from "@/components/skills/SkillUsageTrend";
 
 describe("SkillUsageTrend", () => {
   it.each([
-    ["day", 12, 7200],
-    ["week", 7, 86400],
+    ["day", 12, 7200, 177],
+    ["week", 7, 86400, 102],
   ] as const)(
     "shows %s without usage as equal gray bars with zero-count details",
-    async (range, length, step) => {
+    async (range, length, step, chartWidth) => {
       const start = new Date(2026, 9, 17).getTime() / 1000;
       render(
         <SkillUsageTrend
@@ -24,7 +24,8 @@ describe("SkillUsageTrend", () => {
         />,
       );
       const trend = screen.getByTestId("skill-usage-trend");
-      expect(trend).toHaveClass("w-40");
+      expect(trend).toHaveStyle({ width: `calc(${chartWidth}px + 3.5rem)` });
+      expect(trend).toHaveClass("shrink-0");
       const buckets = within(trend).getAllByRole("button");
       expect(buckets).toHaveLength(length);
       for (const bucket of buckets) {
@@ -91,7 +92,11 @@ describe("SkillUsageTrend", () => {
     });
     render(
       <SkillUsageTrend
-        records={[record("codex", 3), record("claude", 2)]}
+        records={[
+          record("codex", 3),
+          record("claude", 2),
+          { ...record("claude", 1), skillName: "plugin" },
+        ]}
         range="day"
         boundaries={boundaries}
         hoveredApp={null}
@@ -113,7 +118,7 @@ describe("SkillUsageTrend", () => {
       [...buckets[0].querySelectorAll("[data-usage-segment]")].map((segment) =>
         segment.getAttribute("data-usage-segment"),
       ),
-    ).toEqual(["claude", "codex"]);
+    ).toEqual(["claude", "claude", "codex"]);
     expect(buckets[1].querySelector("[data-usage-bar]")).toHaveStyle({
       height: "2px",
     });
@@ -125,6 +130,7 @@ describe("SkillUsageTrend", () => {
     expect(details).toHaveTextContent("Codex");
     const claudeRow = within(details).getByText("Claude").closest("div");
     const codexRow = within(details).getByText("Codex").closest("div");
+    expect(claudeRow).toHaveTextContent("3 skills.usage.times");
     expect(claudeRow?.parentElement).toHaveClass("flex-col-reverse");
     expect(claudeRow?.nextElementSibling).toBe(codexRow);
     expect(details).toHaveTextContent("skills.usage.bucketTotal");

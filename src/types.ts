@@ -426,6 +426,7 @@ export interface Settings {
   hermesConfigDir?: string;
   // 覆盖 Pi agent 配置目录（可选）
   piConfigDir?: string;
+  dshConfigDir?: string;
   dshProfile?: string;
 
   // ===== 当前供应商 ID（设备级）=====

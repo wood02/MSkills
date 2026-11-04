@@ -144,6 +144,23 @@ afterEach(() => {
 });
 
 describe("SettingsPage integration", () => {
+  it("shows the DSH directory in Advanced and saves a custom root", async () => {
+    renderDialog();
+    await screen.findByText("language:zh");
+    fireEvent.click(screen.getByText("settings.tabAdvanced"));
+    fireEvent.click(screen.getByText("settings.advanced.configDir.title"));
+    const dshInput = await screen.findByRole("textbox", {
+      name: "settings.dshConfigDir",
+    });
+    await waitFor(() => expect(dshInput).toHaveValue("/default/dsh"));
+    expect(
+      screen.getByText("settings.dshConfigDirDescription"),
+    ).toBeInTheDocument();
+    fireEvent.change(dshInput, { target: { value: "  /custom/dsh  " } });
+    fireEvent.click(screen.getByText("common.save"));
+    await waitFor(() => expect(getSettings().dshConfigDir).toBe("/custom/dsh"));
+  });
+
   it("loads default settings from MSW", async () => {
     renderDialog();
 

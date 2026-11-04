@@ -7,10 +7,17 @@ export function skillUsageTotals(
 ) {
   if (!snapshot) return undefined;
   const totals: Partial<Record<AppId, number>> = {};
-  for (const record of snapshot.records) {
-    if (skillNames.has(record.skillName)) {
-      totals[record.app] = (totals[record.app] ?? 0) + record.count;
-    }
+  const plugins = new Set(
+    [...skillNames].filter((n) => n.includes(":")).map((n) => n.split(":")[0]),
+  );
+  const rows = [
+    ...snapshot.records.filter((r) => skillNames.has(r.skillName)),
+    ...(snapshot.pluginHookRecords ?? []).filter((r) =>
+      plugins.has(r.skillName),
+    ),
+  ];
+  for (const row of rows) {
+    totals[row.app] = (totals[row.app] ?? 0) + row.count;
   }
   return totals;
 }
@@ -36,7 +43,11 @@ export interface SkillUsageData {
   snapshots?: Record<SkillUsageRange, SkillUsageSnapshot>;
   status: Omit<
     SkillUsageSnapshot,
-    "records" | "pluginSkills" | "pluginDescriptions" | "pluginSources"
+    | "records"
+    | "pluginHookRecords"
+    | "pluginSkills"
+    | "pluginDescriptions"
+    | "pluginSources"
   >;
 }
 
