@@ -1,8 +1,7 @@
 name: WSL2 Nightly
 
 # The full backend suite takes 50+ minutes on a \\wsl.localhost 9P filesystem,
-# so it runs nightly instead of per PR. The per-PR gate in ci.yml only runs the
-# atomic-write contract test against the same WSL2-backed environment.
+# so it runs nightly instead of per PR, including the atomic-write contract.
 on:
   schedule:
     - cron: "23 18 * * *" # 02:23 Beijing time
@@ -90,16 +89,23 @@ jobs:
           "MSKILLS_WSL_TEST_TEMP=$testTemp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Compile backend tests with native temp
-        # link.exe/mt.exe cannot create manifests when TEMP points at a WSL UNC path.
-        run: cargo test --tests --manifest-path src-tauri/Cargo.toml --no-run
+        # Calling Cargo after changing TEMP can rebuild and break link.exe/mt.exe.
+        shell: pwsh
+        run: |
+          cargo test --locked --tests --manifest-path src-tauri/Cargo.toml --no-run --message-format=json-render-diagnostics > "$env:RUNNER_TEMP/test-artifacts.jsonl"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Windows-to-WSL2 filesystem contract
+        working-directory: src-tauri
         shell: pwsh
         run: |
           $env:TEMP = $env:MSKILLS_WSL_TEST_TEMP
           $env:TMP = $env:MSKILLS_WSL_TEST_TEMP
           $testName = "config::tests::atomic_write_replaces_existing_wsl_unc_file"
-          $testList = cargo test --tests --manifest-path src-tauri/Cargo.toml -- --ignored --list
+          $artifacts = Get-Content "$env:RUNNER_TEMP/test-artifacts.jsonl" | ConvertFrom-Json
+          $testBinary = @($artifacts | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.target.name -eq 'mskills_lib' -and $_.executable })
+          if ($testBinary.Count -ne 1) { throw "Expected exactly one library test binary" }
+          $testList = & $testBinary[0].executable --ignored --list
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
@@ -107,14 +113,21 @@ jobs:
           if ($testList -notcontains $expected) {
             throw "Expected ignored test was not discovered: $testName"
           }
-          cargo test --tests --manifest-path src-tauri/Cargo.toml $testName -- --ignored --exact --nocapture
+          & $testBinary[0].executable $testName --ignored --exact --nocapture
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
 
       - name: Run full test suite against WSL2-backed home
+        working-directory: src-tauri
         shell: pwsh
         run: |
           $env:TEMP = $env:MSKILLS_WSL_TEST_TEMP
           $env:TMP = $env:MSKILLS_WSL_TEST_TEMP
-          cargo test --tests --manifest-path src-tauri/Cargo.toml -- --test-threads=1
+          $artifacts = Get-Content "$env:RUNNER_TEMP/test-artifacts.jsonl" | ConvertFrom-Json
+          $testBinaries = @($artifacts | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable } | Sort-Object { $_.target.kind -contains 'test' }, { $_.target.kind -contains 'bin' }, { $_.target.name } | Select-Object -ExpandProperty executable -Unique)
+          if ($testBinaries.Count -eq 0) { throw "No test binaries were compiled" }
+          foreach ($testBinary in $testBinaries) {
+            & $testBinary --test-threads=1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

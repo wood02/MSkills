@@ -51,6 +51,17 @@ test("CI gate accepts successful checks and only skips unchanged areas on PRs", 
     backend: { result: "skipped" },
   };
   checkCi(results, "pull_request");
+  checkCi(
+    {
+      changes: {
+        result: "success",
+        outputs: { frontend: "false", backend: "false" },
+      },
+      frontend: { result: "skipped" },
+      backend: { result: "skipped" },
+    },
+    "pull_request",
+  );
   assert.throws(() => checkCi(results, "push"), /backend must succeed/);
   for (const result of ["failure", "cancelled", "skipped"]) {
     assert.throws(
