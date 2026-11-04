@@ -125,7 +125,7 @@ jobs:
           $env:TEMP = $env:MSKILLS_WSL_TEST_TEMP
           $env:TMP = $env:MSKILLS_WSL_TEST_TEMP
           $artifacts = Get-Content "$env:RUNNER_TEMP/test-artifacts.jsonl" | ConvertFrom-Json
-          $testBinaries = @($artifacts | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable } | Select-Object -ExpandProperty executable -Unique)
+          $testBinaries = @($artifacts | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable } | Sort-Object { $_.target.kind -contains 'test' }, { $_.target.kind -contains 'bin' }, { $_.target.name } | Select-Object -ExpandProperty executable -Unique)
           if ($testBinaries.Count -eq 0) { throw "No test binaries were compiled" }
           foreach ($testBinary in $testBinaries) {
             & $testBinary --test-threads=1

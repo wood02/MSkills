@@ -18,7 +18,11 @@ export function testArgs(suite, targets) {
   if (suite === "integration") {
     return ["--bins", ...targets.flatMap((name) => ["--test", name])];
   }
-  assert.match(suite, /^[1-3]\/3$/, "Expected all, unit or 1/3..3/3");
+  assert.match(
+    suite,
+    /^[1-3]\/3$/,
+    "Expected all, unit, integration or 1/3..3/3",
+  );
   const shards = Array.from({ length: 3 }, () => ({ names: [], seconds: 0 }));
   for (const name of [...targets].sort(
     (a, b) => (seconds[b] ?? 1) - (seconds[a] ?? 1) || a.localeCompare(b),
