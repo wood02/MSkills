@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v1.0.5 - 2026-11-09
+
+- 支持 Google Antigravity (AGY)：
+  - 支持 Antigravity 配置目录（`~/.gemini/config`）与数据运行目录（`~/.gemini/antigravity`）的自动检测、自定义设置与路径重置。
+  - 支持 MCP 配置双向读写同步（`~/.gemini/config/mcp_config.json`），适配 stdio、http、sse 协议及环境变量规范转换。
+  - 支持会话管理器（Session Manager）浏览 Antigravity 会话历史与日志。
+  - 技能统计（Skill Usage）支持解析 Antigravity 会话 transcript 日志，统计 Slash 技能指令及工具调用，支持基于游标的增量扫描与会话粒度调用去重。
+  - 引入 Antigravity 官方品牌矢量图标与四色渐变高光样式（按官方比例蓝 45%、绿 20%、黄 17%、红 18% 定制）。
+- 缩短 GitHub Actions CI 关键路径耗时，分片慢速测试用例，优化构建缓存复用。
+
 ## v1.0.4 - 2026-11-04
 
 - 新增 DSH 配置目录设置，支持查看、选择和恢复默认；手动目录优先于 `DSH_HOME`，未设置时使用 `~/.dsh`，切换目录不搬迁现有文件。
