@@ -4,7 +4,9 @@ pub mod terminal;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use providers::{claude, codex, gemini, grokbuild, hermes, mcode, openclaw, opencode, pi};
+use providers::{
+    antigravity, claude, codex, gemini, grokbuild, hermes, mcode, openclaw, opencode, pi,
+};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +90,7 @@ pub fn scan_sessions() -> Vec<SessionMeta> {
     sessions.extend(r8);
     sessions.extend(mcode::scan_sessions());
     sessions.extend(providers::dsh::scan_sessions());
+    sessions.extend(antigravity::scan_sessions());
 
     sessions.sort_by(|a, b| {
         let a_ts = a.last_active_at.or(a.created_at).unwrap_or(0);
@@ -121,6 +124,7 @@ pub fn load_messages(provider_id: &str, source_path: &str) -> Result<Vec<Session
         "hermes" => hermes::load_messages(path),
         "pi" => pi::load_messages(path),
         "dsh" => providers::dsh::load_messages(path),
+        "antigravity" => antigravity::load_messages(path),
         _ => Err(format!("Unsupported provider: {provider_id}")),
     }
 }
@@ -133,6 +137,12 @@ pub fn delete_session(
     if provider_id == "dsh" {
         return Err(
             "Manage DSH sessions in its native UI so generation logs and sidecars stay consistent"
+                .into(),
+        );
+    }
+    if provider_id == "antigravity" {
+        return Err(
+            "Manage Antigravity sessions in Antigravity so brain artifacts and logs stay consistent"
                 .into(),
         );
     }
@@ -227,6 +237,7 @@ fn provider_roots(provider_id: &str) -> Result<Vec<PathBuf>, String> {
         "grokbuild" => grokbuild::session_roots(),
         "hermes" => vec![crate::hermes_config::get_hermes_dir().join("sessions")],
         "pi" => pi::session_roots(),
+        "antigravity" => vec![crate::antigravity_config::data_dir().join("brain")],
         _ => return Err(format!("Unsupported provider: {provider_id}")),
     };
 

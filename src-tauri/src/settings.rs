@@ -39,6 +39,8 @@ pub struct VisibleApps {
     #[serde(default = "default_true")]
     pub gemini: bool,
     #[serde(default = "default_true")]
+    pub antigravity: bool,
+    #[serde(default = "default_true")]
     pub grokbuild: bool,
     #[serde(default = "default_true")]
     pub opencode: bool,
@@ -61,6 +63,7 @@ impl Default for VisibleApps {
             claude_desktop: true,
             codex: true,
             gemini: true,
+            antigravity: true,
             grokbuild: true,
             opencode: true,
             openclaw: true,
@@ -80,6 +83,7 @@ impl VisibleApps {
             AppType::ClaudeDesktop => self.claude_desktop,
             AppType::Codex => self.codex,
             AppType::Gemini => self.gemini,
+            AppType::Antigravity => self.antigravity,
             AppType::GrokBuild => self.grokbuild,
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => self.openclaw,
@@ -458,6 +462,8 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub antigravity_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grok_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode_config_dir: Option<String>,
@@ -585,6 +591,7 @@ impl Default for AppSettings {
             claude_config_dir: None,
             codex_config_dir: None,
             gemini_config_dir: None,
+            antigravity_config_dir: None,
             grok_config_dir: None,
             opencode_config_dir: None,
             openclaw_config_dir: None,
@@ -640,6 +647,13 @@ impl AppSettings {
 
         self.gemini_config_dir = self
             .gemini_config_dir
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        self.antigravity_config_dir = self
+            .antigravity_config_dir
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
@@ -988,6 +1002,14 @@ pub fn get_gemini_override_dir() -> Option<PathBuf> {
         .map(|p| resolve_override_path(p))
 }
 
+pub fn get_antigravity_override_dir() -> Option<PathBuf> {
+    let settings = settings_store().read().ok()?;
+    settings
+        .antigravity_config_dir
+        .as_ref()
+        .map(|p| resolve_override_path(p))
+}
+
 pub fn get_grok_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
     settings
@@ -1073,7 +1095,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::OpenCode => settings.current_provider_opencode.clone(),
         AppType::OpenClaw => settings.current_provider_openclaw.clone(),
         AppType::Hermes => settings.current_provider_hermes.clone(),
-        AppType::Pi | AppType::Mcode | AppType::Dsh => None,
+        AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity => None,
     }
 }
 
@@ -1092,7 +1114,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::OpenCode => settings.current_provider_opencode = id_owned.clone(),
         AppType::OpenClaw => settings.current_provider_openclaw = id_owned.clone(),
         AppType::Hermes => settings.current_provider_hermes = id_owned.clone(),
-        AppType::Pi | AppType::Mcode | AppType::Dsh => {}
+        AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity => {}
     })
 }
 

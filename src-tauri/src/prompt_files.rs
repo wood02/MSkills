@@ -14,6 +14,11 @@ pub(crate) fn validate_prompt_content(app: &AppType, content: &str) -> Result<()
             "MCode global instructions must not exceed 32 KiB".into(),
         ));
     }
+    if matches!(app, AppType::Antigravity) && content.len() > 24_000 {
+        return Err(AppError::InvalidInput(
+            "Antigravity global GEMINI.md must not exceed 24000 bytes".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -31,6 +36,7 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
         AppType::Claude => get_base_dir_with_fallback(get_claude_settings_path(), ".claude")?,
         AppType::Codex => get_base_dir_with_fallback(get_codex_auth_path(), ".codex")?,
         AppType::Gemini => get_gemini_dir(),
+        AppType::Antigravity => crate::antigravity_config::config_dir(),
         AppType::GrokBuild => crate::grok_config::get_grok_config_dir(),
         AppType::OpenCode => get_opencode_dir(),
         AppType::OpenClaw => get_openclaw_dir(),
@@ -44,7 +50,7 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
     let filename = match app {
         AppType::Claude => "CLAUDE.md",
         AppType::Codex => "AGENTS.md",
-        AppType::Gemini => "GEMINI.md",
+        AppType::Gemini | AppType::Antigravity => "GEMINI.md",
         AppType::GrokBuild | AppType::OpenCode | AppType::OpenClaw => "AGENTS.md",
         AppType::Hermes => "SOUL.md",
         AppType::Pi | AppType::Mcode | AppType::Dsh => "AGENTS.md",

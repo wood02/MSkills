@@ -91,6 +91,7 @@ type ProviderFilter =
   | "opencode"
   | "openclaw"
   | "gemini"
+  | "antigravity"
   | "hermes"
   | "pi"
   | "mcode"
@@ -578,7 +579,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
         (session) =>
           Boolean(session.sourcePath) &&
           session.providerId !== "mcode" &&
-          session.providerId !== "dsh",
+          session.providerId !== "dsh" &&
+          session.providerId !== "antigravity",
       ),
     [filteredSessions],
   );
@@ -597,7 +599,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
         (session) =>
           Boolean(session.sourcePath) &&
           session.providerId !== "mcode" &&
-          session.providerId !== "dsh",
+          session.providerId !== "dsh" &&
+          session.providerId !== "antigravity",
       ),
     [selectedSessions],
   );
@@ -638,7 +641,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
       (session) =>
         Boolean(session.sourcePath) &&
         session.providerId !== "mcode" &&
-        session.providerId !== "dsh",
+        session.providerId !== "dsh" &&
+        session.providerId !== "antigravity",
     );
     const selectedCount = selectableSessions.filter((session) =>
       selectedSessionKeys.has(getSessionKey(session)),
@@ -660,7 +664,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
     if (
       !session.sourcePath ||
       session.providerId === "mcode" ||
-      session.providerId === "dsh"
+      session.providerId === "dsh" ||
+      session.providerId === "antigravity"
     )
       return;
     const key = getSessionKey(session);
@@ -683,7 +688,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
       (session) =>
         Boolean(session.sourcePath) &&
         session.providerId !== "mcode" &&
-        session.providerId !== "dsh",
+        session.providerId !== "dsh" &&
+        session.providerId !== "antigravity",
     );
     if (selectableSessions.length === 0) return;
 
@@ -745,7 +751,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
         isCheckDisabled={
           !session.sourcePath ||
           session.providerId === "mcode" ||
-          session.providerId === "dsh"
+          session.providerId === "dsh" ||
+          session.providerId === "antigravity"
         }
         onSelect={setSelectedKey}
         onToggleChecked={(checked) => toggleSessionChecked(session, checked)}
@@ -1214,6 +1221,16 @@ export function SessionManagerPage({ appId }: { appId: string }) {
                                 <span>Gemini CLI</span>
                               </div>
                             </SelectItem>
+                            <SelectItem value="antigravity">
+                              <div className="flex items-center gap-2">
+                                <ProviderIcon
+                                  icon="antigravity"
+                                  name="antigravity"
+                                  size={14}
+                                />
+                                <span>Antigravity</span>
+                              </div>
+                            </SelectItem>
                             <SelectItem value="mcode">MiniMax Code</SelectItem>
                             <SelectItem value="dsh">
                               DeepSeek Harness
@@ -1655,6 +1672,7 @@ export function SessionManagerPage({ appId }: { appId: string }) {
                                 !selectedSession.sourcePath ||
                                 selectedSession.providerId === "mcode" ||
                                 selectedSession.providerId === "dsh" ||
+                                selectedSession.providerId === "antigravity" ||
                                 isDeleting
                               }
                             >

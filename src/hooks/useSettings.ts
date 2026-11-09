@@ -114,6 +114,7 @@ export function useSettings(): UseSettingsResult {
       claude: sanitizeDir(data?.claudeConfigDir),
       codex: sanitizeDir(data?.codexConfigDir),
       gemini: sanitizeDir(data?.geminiConfigDir),
+      antigravity: sanitizeDir(data?.antigravityConfigDir),
       grokbuild: sanitizeDir(data?.grokConfigDir),
       opencode: sanitizeDir(data?.opencodeConfigDir),
       openclaw: sanitizeDir(data?.openclawConfigDir),
@@ -194,6 +195,9 @@ export function useSettings(): UseSettingsResult {
         const sanitizedClaudeDir = sanitizeDir(mergedSettings.claudeConfigDir);
         const sanitizedCodexDir = sanitizeDir(mergedSettings.codexConfigDir);
         const sanitizedGeminiDir = sanitizeDir(mergedSettings.geminiConfigDir);
+        const sanitizedAntigravityDir = sanitizeDir(
+          mergedSettings.antigravityConfigDir,
+        );
         const sanitizedGrokDir = sanitizeDir(mergedSettings.grokConfigDir);
         const sanitizedOpencodeDir = sanitizeDir(
           mergedSettings.opencodeConfigDir,
@@ -214,6 +218,7 @@ export function useSettings(): UseSettingsResult {
           claudeConfigDir: sanitizedClaudeDir,
           codexConfigDir: sanitizedCodexDir,
           geminiConfigDir: sanitizedGeminiDir,
+          antigravityConfigDir: sanitizedAntigravityDir,
           grokConfigDir: sanitizedGrokDir,
           opencodeConfigDir: sanitizedOpencodeDir,
           openclawConfigDir: sanitizedOpenclawDir,
@@ -331,6 +336,9 @@ export function useSettings(): UseSettingsResult {
         const sanitizedClaudeDir = sanitizeDir(mergedSettings.claudeConfigDir);
         const sanitizedCodexDir = sanitizeDir(mergedSettings.codexConfigDir);
         const sanitizedGeminiDir = sanitizeDir(mergedSettings.geminiConfigDir);
+        const sanitizedAntigravityDir = sanitizeDir(
+          mergedSettings.antigravityConfigDir,
+        );
         const sanitizedGrokDir = sanitizeDir(mergedSettings.grokConfigDir);
         const sanitizedOpencodeDir = sanitizeDir(
           mergedSettings.opencodeConfigDir,
@@ -344,6 +352,7 @@ export function useSettings(): UseSettingsResult {
         const previousClaudeDir = sanitizeDir(data?.claudeConfigDir);
         const previousCodexDir = sanitizeDir(data?.codexConfigDir);
         const previousGeminiDir = sanitizeDir(data?.geminiConfigDir);
+        const previousAntigravityDir = sanitizeDir(data?.antigravityConfigDir);
         const previousGrokDir = sanitizeDir(data?.grokConfigDir);
         const previousOpencodeDir = sanitizeDir(data?.opencodeConfigDir);
         const previousOpenclawDir = sanitizeDir(data?.openclawConfigDir);
@@ -360,6 +369,7 @@ export function useSettings(): UseSettingsResult {
           claudeConfigDir: sanitizedClaudeDir,
           codexConfigDir: sanitizedCodexDir,
           geminiConfigDir: sanitizedGeminiDir,
+          antigravityConfigDir: sanitizedAntigravityDir,
           grokConfigDir: sanitizedGrokDir,
           opencodeConfigDir: sanitizedOpencodeDir,
           openclawConfigDir: sanitizedOpenclawDir,
@@ -449,6 +459,8 @@ export function useSettings(): UseSettingsResult {
         const claudeDirChanged = sanitizedClaudeDir !== previousClaudeDir;
         const codexDirChanged = sanitizedCodexDir !== previousCodexDir;
         const geminiDirChanged = sanitizedGeminiDir !== previousGeminiDir;
+        const antigravityDirChanged =
+          sanitizedAntigravityDir !== previousAntigravityDir;
         const grokDirChanged = sanitizedGrokDir !== previousGrokDir;
         const opencodeDirChanged = sanitizedOpencodeDir !== previousOpencodeDir;
         const openclawDirChanged = sanitizedOpenclawDir !== previousOpenclawDir;
@@ -458,6 +470,7 @@ export function useSettings(): UseSettingsResult {
           (claudeDirChanged ||
             codexDirChanged ||
             geminiDirChanged ||
+            antigravityDirChanged ||
             grokDirChanged ||
             opencodeDirChanged ||
             openclawDirChanged)
@@ -473,7 +486,7 @@ export function useSettings(): UseSettingsResult {
         if (piDirChanged) {
           await invalidatePiDirectoryCaches(queryClient);
         }
-        if (sanitizedDshDir !== previousDshDir) {
+        if (sanitizedDshDir !== previousDshDir || antigravityDirChanged) {
           await Promise.all(
             [["providers", "dsh"], ["mcp"], ["skills"], ["sessions"]].map(
               (queryKey) => queryClient.invalidateQueries({ queryKey }),

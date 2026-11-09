@@ -41,6 +41,17 @@ export function GeminiIcon({ size = 16, className = "" }: IconProps) {
   );
 }
 
+export function AntigravityIcon({ size = 16, className = "" }: IconProps) {
+  return (
+    <ProviderIcon
+      icon="antigravity"
+      name="Antigravity"
+      size={size}
+      className={className}
+    />
+  );
+}
+
 export function OpenClawIcon({ size = 16, className = "" }: IconProps) {
   return (
     <img

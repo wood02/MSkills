@@ -293,6 +293,7 @@ export interface VisibleApps {
   "claude-desktop": boolean;
   codex: boolean;
   gemini: boolean;
+  antigravity?: boolean;
   grokbuild: boolean;
   opencode: boolean;
   openclaw: boolean;
@@ -416,6 +417,8 @@ export interface Settings {
   codexConfigDir?: string;
   // 覆盖 Gemini 配置目录（可选）
   geminiConfigDir?: string;
+  // 覆盖 Antigravity 配置目录（可选）
+  antigravityConfigDir?: string;
   // 覆盖 Grok Build 配置目录（可选）
   grokConfigDir?: string;
   // 覆盖 OpenCode 配置目录（可选）
@@ -518,6 +521,7 @@ export interface McpApps {
   "claude-desktop"?: boolean;
   codex: boolean;
   gemini: boolean;
+  antigravity?: boolean;
   grokbuild?: boolean;
   opencode: boolean;
   openclaw: boolean;

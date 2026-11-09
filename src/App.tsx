@@ -282,6 +282,7 @@ function App() {
       sharedFeatureApp !== "opencode" &&
       sharedFeatureApp !== "openclaw" &&
       sharedFeatureApp !== "gemini" &&
+      sharedFeatureApp !== "antigravity" &&
       sharedFeatureApp !== "hermes" &&
       sharedFeatureApp !== "pi" &&
       sharedFeatureApp !== "mcode" &&
@@ -377,6 +378,7 @@ function App() {
     sharedFeatureApp === "opencode" ||
     sharedFeatureApp === "openclaw" ||
     sharedFeatureApp === "gemini" ||
+    sharedFeatureApp === "antigravity" ||
     sharedFeatureApp === "hermes" ||
     sharedFeatureApp === "pi" ||
     sharedFeatureApp === "mcode" ||
@@ -680,7 +682,12 @@ function App() {
   useEffect(() => {
     const checkEnvOnSwitch = async () => {
       try {
-        if (activeApp === "mcode" || activeApp === "dsh") return;
+        if (
+          activeApp === "mcode" ||
+          activeApp === "dsh" ||
+          activeApp === "antigravity"
+        )
+          return;
         const conflicts = await checkEnvConflicts(activeApp);
 
         if (conflicts.length > 0) {

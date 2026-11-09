@@ -2,6 +2,7 @@ import React from "react";
 import type { AppId } from "@/lib/api/types";
 import type { VisibleApps } from "@/types";
 import {
+  AntigravityIcon,
   ClaudeIcon,
   CodexIcon,
   GeminiIcon,
@@ -21,6 +22,7 @@ export const APP_IDS: AppId[] = [
   "claude-desktop",
   "codex",
   "gemini",
+  "antigravity",
   "grokbuild",
   "opencode",
   "openclaw",
@@ -35,6 +37,7 @@ export const DEFAULT_VISIBLE_APPS: VisibleApps = {
   "claude-desktop": true,
   codex: true,
   gemini: true,
+  antigravity: true,
   grokbuild: true,
   opencode: true,
   openclaw: true,
@@ -49,6 +52,7 @@ export const SKILLS_APP_IDS: AppId[] = [
   "claude",
   "codex",
   "gemini",
+  "antigravity",
   "grokbuild",
   "opencode",
   "hermes",
@@ -76,12 +80,13 @@ export function isProxyAppId(appId: string): appId is ProxyAppId {
 
 export type AdditiveAppId = Extract<
   AppId,
-  "opencode" | "openclaw" | "hermes" | "pi" | "mcode" | "dsh"
+  "opencode" | "openclaw" | "hermes" | "pi" | "mcode" | "dsh" | "antigravity"
 >;
 
 export const ADDITIVE_APP_IDS: AdditiveAppId[] = [
   "mcode",
   "dsh",
+  "antigravity",
   "opencode",
   "openclaw",
   "hermes",
@@ -98,6 +103,7 @@ export const MCP_APP_IDS: McpAppId[] = [
   "claude",
   "codex",
   "gemini",
+  "antigravity",
   "grokbuild",
   "opencode",
   "hermes",
@@ -139,6 +145,14 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
     icon: <GeminiIcon size={14} />,
     activeClass:
       "bg-blue-500/10 ring-1 ring-blue-500/20 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400",
+    badgeClass:
+      "bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 border-0 gap-1.5",
+  },
+  antigravity: {
+    label: "Antigravity",
+    icon: <AntigravityIcon size={14} />,
+    activeClass:
+      "bg-antigravity-gradient-ring ring-1 ring-blue-500/25 hover:ring-blue-500/40 text-blue-600 dark:text-blue-400",
     badgeClass:
       "bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 border-0 gap-1.5",
   },

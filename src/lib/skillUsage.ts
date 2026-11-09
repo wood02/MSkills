@@ -37,6 +37,7 @@ export function skillUsageBoundaries(range: SkillUsageRange, now = new Date()) {
 export const skillUsageColor = {
   claude: "bg-orange-500",
   codex: "bg-blue-500",
+  antigravity: "bg-antigravity-gradient-bar",
 } as const;
 
 export interface SkillUsageData {

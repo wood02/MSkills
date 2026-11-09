@@ -209,6 +209,11 @@ pub(crate) fn build_provider_from_request(
                 "Pi providers must be added from the Pi provider page".to_string(),
             ));
         }
+        AppType::Antigravity => {
+            return Err(AppError::InvalidInput(
+                "Antigravity uses built-in Google account sign-in".to_string(),
+            ));
+        }
     };
 
     // Build usage script configuration if provided

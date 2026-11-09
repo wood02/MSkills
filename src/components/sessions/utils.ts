@@ -127,6 +127,7 @@ export const getProviderIconName = (providerId: string) => {
   if (providerId === "dsh") return "deepseek";
   if (providerId === "opencode") return "opencode";
   if (providerId === "openclaw") return "openclaw";
+  if (providerId === "antigravity") return "antigravity";
   return providerId;
 };
 

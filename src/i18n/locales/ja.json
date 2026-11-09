@@ -801,7 +801,10 @@
     "piConfigDirDescription": "Pi の設定ディレクトリ（models.json、指示ファイル、プロンプト、Skills、セッション）を上書きします。",
     "dshConfigDir": "DSH 設定ディレクトリ",
     "dshConfigDirDescription": "DSH クライアントが使用するルートディレクトリを選択します。空欄の場合は DSH_HOME、未設定時は ~/.dsh を使用します。ファイルの移動や DSH クライアントの設定変更は行いません。",
+    "antigravityConfigDir": "Antigravity 設定ディレクトリ",
+    "antigravityConfigDirDescription": "Antigravity の設定ディレクトリ（mcp_config.json、GEMINI.md、Skills）を上書きします。",
     "browsePlaceholderDsh": "例: /home/<your-username>/.dsh",
+    "browsePlaceholderAntigravity": "例: /home/<your-username>/.gemini/config",
     "browsePlaceholderClaude": "例: /home/<your-username>/.claude",
     "browsePlaceholderCodex": "例: /home/<your-username>/.codex",
     "browsePlaceholderGemini": "例: /home/<your-username>/.gemini",
@@ -926,7 +929,8 @@
     "hermes": "Hermes",
     "pi": "Pi",
     "mcode": "MiniMax Code",
-    "dsh": "DeepSeek Harness"
+    "dsh": "DeepSeek Harness",
+    "antigravity": "Antigravity"
   },
   "pi": {
     "empty": {
@@ -2046,7 +2050,8 @@
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
         "mcode": "MiniMax Code",
-        "dsh": "DeepSeek Harness"
+        "dsh": "DeepSeek Harness",
+        "antigravity": "Antigravity"
       }
     },
     "userLevelPath": "ユーザーレベルの MCP パス",

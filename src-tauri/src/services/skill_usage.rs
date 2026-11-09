@@ -69,6 +69,7 @@ pub fn request_scan(db: Arc<Database>) -> Result<(), String> {
                     Err(_) => failed += 1,
                 }
             }
+            collect_antigravity_transcripts(&mut files);
             if let Ok(mut state) = scan_state().lock() {
                 state.status.files_total = files.len();
             }
@@ -137,6 +138,33 @@ fn collect_files(
     }
 }
 
+fn collect_antigravity_transcripts(files: &mut Vec<(&'static str, PathBuf)>) {
+    let brain_dir = crate::antigravity_config::data_dir().join("brain");
+    let Ok(entries) = fs::read_dir(&brain_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let conv_dir = entry.path();
+        if !conv_dir.is_dir() {
+            continue;
+        }
+        if conv_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|s| s.starts_with('.'))
+        {
+            continue;
+        }
+        let transcript = conv_dir
+            .join(".system_generated")
+            .join("logs")
+            .join("transcript.jsonl");
+        if transcript.is_file() {
+            files.push(("antigravity", transcript));
+        }
+    }
+}
+
 const SESSION_HOOK: &str = "session_hook";
 /// One session start writes a row per hook of a plugin, a few seconds apart.
 const HOOK_LOAD_WINDOW_SECS: i64 = 60;
@@ -193,6 +221,14 @@ fn skill_path(path: &str) -> Option<String> {
             return name(&format!("{}:{}", parts[at + 3], parts[at + 6]));
         }
     }
+    // .../plugins/<plugin>/skills/<skill>/SKILL.md (e.g. Antigravity plugin layout)
+    if let Some(at) = parts.iter().rposition(|&p| p == "plugins") {
+        if parts.len() == at + 5 && parts.get(at + 2) == Some(&"skills") {
+            if let (Some(plugin), Some(skill)) = (parts.get(at + 1), parts.get(at + 3)) {
+                return name(&format!("{plugin}:{skill}"));
+            }
+        }
+    }
     name(path.parent()?.file_name()?.to_str()?)
 }
 
@@ -232,6 +268,10 @@ fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
     };
     let mut catalog = PluginCatalog::default();
     for (app, root) in cache_roots {
+        if *app == "antigravity" {
+            add_antigravity_plugins(root, &mut catalog);
+            continue;
+        }
         for marketplace in children(root) {
             let Some(marketplace_name) = marketplace.file_name().and_then(|n| n.to_str()) else {
                 continue;
@@ -310,6 +350,71 @@ fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
         }
     }
     catalog
+}
+
+fn add_antigravity_plugins(plugins_dir: &Path, catalog: &mut PluginCatalog) {
+    let Ok(entries) = fs::read_dir(plugins_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let plugin_path = entry.path();
+        if !plugin_path.is_dir() {
+            continue;
+        }
+        let Some(plugin_name) = plugin_path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let mut has_skills = false;
+        let skills_dir = plugin_path.join("skills");
+        if let Ok(skills) = fs::read_dir(&skills_dir) {
+            for skill in skills.flatten() {
+                let skill_md = skill.path().join("SKILL.md");
+                if !skill_md.is_file() {
+                    continue;
+                }
+                let Some(key) = skill
+                    .file_name()
+                    .to_str()
+                    .and_then(|n| name(&format!("{plugin_name}:{n}")))
+                else {
+                    continue;
+                };
+                let description =
+                    crate::services::skill::SkillService::parse_skill_metadata_static(&skill_md)
+                        .ok()
+                        .and_then(|meta| meta.description)
+                        .unwrap_or_default();
+                catalog.skills.insert(key, description.trim().to_string());
+                has_skills = true;
+            }
+        }
+        if has_skills {
+            let plugin_json_val = fs::read_to_string(plugin_path.join("plugin.json"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+            let description = plugin_json_val
+                .as_ref()
+                .and_then(|val| val.get("description").and_then(Value::as_str))
+                .unwrap_or_default()
+                .to_string();
+            catalog.plugins.insert(plugin_name.to_string(), description);
+            let version = plugin_json_val
+                .as_ref()
+                .and_then(|val| val.get("version").and_then(Value::as_str))
+                .unwrap_or_default()
+                .to_string();
+            catalog
+                .sources
+                .entry(plugin_name.to_string())
+                .or_default()
+                .insert(PluginSource {
+                    app: "antigravity".to_string(),
+                    marketplace: "antigravity-plugins-official".to_string(),
+                    version,
+                    commands: 0,
+                });
+        }
+    }
 }
 
 /// Claude logs a hook by its `statusMessage`, or else by its command and args.
@@ -432,8 +537,10 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         }
     } else if let Some(session) = row["sessionId"].as_str() {
         context.session = session.to_string();
+    } else if app == "antigravity" && context.session.is_empty() {
+        context.session = fallback_id.to_string();
     }
-    let Some(at) = timestamp(&row["timestamp"]) else {
+    let Some(at) = timestamp(&row["timestamp"]).or_else(|| timestamp(&row["created_at"])) else {
         return vec![];
     };
     if context.fork_at.is_some_and(|fork| at < fork) {
@@ -443,6 +550,88 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         return vec![];
     }
     let mut events = Vec::new();
+    if app == "antigravity" {
+        let step_type = row.get("type").and_then(Value::as_str).unwrap_or("");
+        let step_index = row
+            .get("step_index")
+            .and_then(Value::as_i64)
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| fallback_id.to_string());
+        let session_id = if !context.session.is_empty() {
+            &context.session
+        } else {
+            fallback_id
+        };
+        if step_type == "USER_INPUT" {
+            context.turn = format!("step-{step_index}");
+            if let Some(content) = row.get("content").and_then(Value::as_str) {
+                let cleaned =
+                    crate::session_manager::providers::antigravity::clean_user_input(content);
+                if let Some(first_word) = cleaned.split_whitespace().next() {
+                    if let Some(cmd) = first_word.strip_prefix('/') {
+                        let cmd = cmd.trim_end_matches(|c: char| {
+                            !c.is_alphanumeric() && c != '-' && c != '_'
+                        });
+                        if let Some(skill) = name(cmd) {
+                            events.push(event(
+                                context,
+                                app,
+                                &format!("{session_id}:user-{step_index}"),
+                                skill,
+                                at,
+                                true,
+                                "slash_command",
+                            ));
+                        }
+                    }
+                }
+            }
+        } else if let Some(tool_calls) = row.get("tool_calls").and_then(Value::as_array) {
+            if context.turn.is_empty() {
+                context.turn = format!("step-{step_index}");
+            }
+            for (idx, call) in tool_calls.iter().enumerate() {
+                let tool_name = call.get("name").and_then(Value::as_str).unwrap_or("");
+                let short_name = tool_name.split(':').next_back().unwrap_or(tool_name);
+                let args = &call["args"];
+                if short_name == "read_file" || short_name == "view_file" {
+                    let path_val = args
+                        .get("Path")
+                        .or_else(|| args.get("path"))
+                        .or_else(|| args.get("file_path"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let clean_path = path_val.trim().trim_matches('"').trim_matches('\'');
+                    if let Some(skill) = skill_path(clean_path) {
+                        events.push(event(
+                            context,
+                            app,
+                            &format!("{session_id}:call-{step_index}-{idx}"),
+                            skill,
+                            at,
+                            false,
+                            "skill_file_read",
+                        ));
+                    }
+                } else if short_name == "run_command" {
+                    if let Some(cmd) = args.get("CommandLine").or_else(|| args.get("command")) {
+                        for skill in read_command_skills(cmd) {
+                            events.push(event(
+                                context,
+                                app,
+                                &format!("{session_id}:call-{step_index}-{idx}"),
+                                skill,
+                                at,
+                                false,
+                                "skill_file_read",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        return events;
+    }
     if app == "claude" {
         let message = &row["message"];
         let content = &message["content"];
@@ -735,6 +924,16 @@ fn sync_file(
     };
     let mut offset = 0;
     let mut context = Context::default();
+    if app == "antigravity" {
+        if let Some(conv_id) = path
+            .ancestors()
+            .nth(3)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+        {
+            context.session = conv_id.to_string();
+        }
+    }
     if let Some((last_modified, size, position, tail, stored_context)) = cursor {
         if position <= metadata.len() && fingerprint(&mut file, position)? == tail {
             if modified == last_modified && size == metadata.len() {
@@ -744,6 +943,16 @@ fn sync_file(
             context = serde_json::from_str(&stored_context).map_err(|e| e.to_string())?;
         }
         // Rewritten files can be replayed safely: event IDs and activation keys are durable.
+    }
+    if context.session.is_empty() && app == "antigravity" {
+        if let Some(conv_id) = path
+            .ancestors()
+            .nth(3)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+        {
+            context.session = conv_id.to_string();
+        }
     }
     file.seek(SeekFrom::Start(offset))
         .map_err(|e| e.to_string())?;
@@ -892,6 +1101,10 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
         (
             "codex",
             crate::codex_config::get_codex_config_dir().join("plugins/cache"),
+        ),
+        (
+            "antigravity",
+            crate::antigravity_config::config_dir().join("plugins"),
         ),
     ]);
     usage_with_catalog(db, boundaries, catalog)
@@ -1562,5 +1775,83 @@ name: x
         assert_eq!(snapshot.records.len(), 1);
         assert_eq!(snapshot.records[0].skill_name, "archify");
         assert_eq!(snapshot.records[0].count, 1);
+    }
+
+    #[test]
+    fn antigravity_slash_commands_and_tool_calls_are_parsed_and_counted() {
+        let (db, _dir, _path) = setup();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO skills(id,name,directory) VALUES ('hunt','hunt','hunt')",
+                [],
+            )
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let transcript = dir
+            .path()
+            .join("conv-123")
+            .join(".system_generated")
+            .join("logs")
+            .join("transcript.jsonl");
+        fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+
+        append(
+            &transcript,
+            &[
+                json!({
+                    "step_index": 0,
+                    "type": "USER_INPUT",
+                    "created_at": "2026-10-16T01:00:00Z",
+                    "content": "<USER_REQUEST>\n/archify system architecture\n</USER_REQUEST>"
+                }),
+                json!({
+                    "step_index": 1,
+                    "type": "PLANNER_RESPONSE",
+                    "created_at": "2026-10-16T01:01:00Z",
+                    "tool_calls": [{
+                        "name": "read_file",
+                        "args": {
+                            "Path": "\"/Users/w_ood/.gemini/config/skills/archify/SKILL.md\""
+                        }
+                    }]
+                }),
+                json!({
+                    "step_index": 2,
+                    "type": "USER_INPUT",
+                    "created_at": "2026-10-16T01:05:00Z",
+                    "content": "<USER_REQUEST>\nrun hunt\n</USER_REQUEST>"
+                }),
+                json!({
+                    "step_index": 3,
+                    "type": "PLANNER_RESPONSE",
+                    "created_at": "2026-10-16T01:06:00Z",
+                    "tool_calls": [{
+                        "name": "run_command",
+                        "args": {
+                            "CommandLine": "cat ~/.gemini/config/skills/hunt/SKILL.md"
+                        }
+                    }]
+                }),
+            ],
+        );
+
+        sync_file(&db, "antigravity", &transcript, &HashMap::new()).unwrap();
+        let snapshot = get_usage(&db, &[1792108800, 1792195200]).unwrap();
+        let by_name: HashMap<_, _> = snapshot
+            .records
+            .into_iter()
+            .filter(|r| r.app == "antigravity")
+            .map(|r| (r.skill_name.clone(), r))
+            .collect();
+
+        assert_eq!(by_name["archify"].count, 1);
+        assert_eq!(by_name["archify"].manual_count, 1);
+        assert_eq!(by_name["archify"].sessions, 1);
+
+        assert_eq!(by_name["hunt"].count, 1);
+        assert_eq!(by_name["hunt"].agent_count, 1);
+        assert_eq!(by_name["hunt"].sessions, 1);
     }
 }

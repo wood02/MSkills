@@ -10,6 +10,7 @@ type AppDirectoryKey =
   | "claude"
   | "codex"
   | "gemini"
+  | "antigravity"
   | "grokbuild"
   | "opencode"
   | "openclaw"
@@ -23,6 +24,7 @@ export interface ResolvedDirectories {
   claude: string;
   codex: string;
   gemini: string;
+  antigravity: string;
   grokbuild: string;
   opencode: string;
   openclaw: string;
@@ -39,6 +41,7 @@ const APP_DIRECTORY_META: Record<
   claude: { key: "claude", defaultFolder: ".claude" },
   codex: { key: "codex", defaultFolder: ".codex" },
   gemini: { key: "gemini", defaultFolder: ".gemini" },
+  antigravity: { key: "antigravity", defaultFolder: ".gemini/config" },
   grokbuild: { key: "grokbuild", defaultFolder: ".grok" },
   opencode: { key: "opencode", defaultFolder: ".config/opencode" },
   openclaw: { key: "openclaw", defaultFolder: ".openclaw" },
@@ -54,6 +57,7 @@ const DIRECTORY_KEY_TO_SETTINGS_FIELD: Record<
   claude: "claudeConfigDir",
   codex: "codexConfigDir",
   gemini: "geminiConfigDir",
+  antigravity: "antigravityConfigDir",
   grokbuild: "grokConfigDir",
   opencode: "opencodeConfigDir",
   openclaw: "openclawConfigDir",
@@ -143,6 +147,7 @@ export function useDirectorySettings({
     claude: "",
     codex: "",
     gemini: "",
+    antigravity: "",
     grokbuild: "",
     opencode: "",
     openclaw: "",
@@ -157,6 +162,7 @@ export function useDirectorySettings({
     claude: "",
     codex: "",
     gemini: "",
+    antigravity: "",
     grokbuild: "",
     opencode: "",
     openclaw: "",
@@ -178,6 +184,7 @@ export function useDirectorySettings({
           claudeDir,
           codexDir,
           geminiDir,
+          antigravityDir,
           grokDir,
           opencodeDir,
           openclawDir,
@@ -188,6 +195,7 @@ export function useDirectorySettings({
           defaultClaudeDir,
           defaultCodexDir,
           defaultGeminiDir,
+          defaultAntigravityDir,
           defaultGrokDir,
           defaultOpencodeDir,
           defaultOpenclawDir,
@@ -199,6 +207,7 @@ export function useDirectorySettings({
           settingsApi.getConfigDir("claude"),
           settingsApi.getConfigDir("codex"),
           settingsApi.getConfigDir("gemini"),
+          settingsApi.getConfigDir("antigravity"),
           settingsApi.getConfigDir("grokbuild"),
           settingsApi.getConfigDir("opencode"),
           settingsApi.getConfigDir("openclaw"),
@@ -209,6 +218,7 @@ export function useDirectorySettings({
           computeDefaultConfigDir("claude"),
           computeDefaultConfigDir("codex"),
           computeDefaultConfigDir("gemini"),
+          computeDefaultConfigDir("antigravity"),
           computeDefaultConfigDir("grokbuild"),
           computeDefaultConfigDir("opencode"),
           computeDefaultConfigDir("openclaw"),
@@ -226,6 +236,7 @@ export function useDirectorySettings({
           claude: defaultClaudeDir ?? "",
           codex: defaultCodexDir ?? "",
           gemini: defaultGeminiDir ?? "",
+          antigravity: defaultAntigravityDir ?? "",
           grokbuild: defaultGrokDir ?? "",
           opencode: defaultOpencodeDir ?? "",
           openclaw: defaultOpenclawDir ?? "",
@@ -242,6 +253,7 @@ export function useDirectorySettings({
           claude: claudeDir || defaultsRef.current.claude,
           codex: codexDir || defaultsRef.current.codex,
           gemini: geminiDir || defaultsRef.current.gemini,
+          antigravity: antigravityDir || defaultsRef.current.antigravity,
           grokbuild: grokDir || defaultsRef.current.grokbuild,
           opencode: opencodeDir || defaultsRef.current.opencode,
           openclaw: openclawDir || defaultsRef.current.openclaw,
@@ -386,6 +398,7 @@ export function useDirectorySettings({
         claude: overrides?.claude ?? defaultsRef.current.claude,
         codex: overrides?.codex ?? defaultsRef.current.codex,
         gemini: overrides?.gemini ?? defaultsRef.current.gemini,
+        antigravity: overrides?.antigravity ?? defaultsRef.current.antigravity,
         grokbuild: overrides?.grokbuild ?? defaultsRef.current.grokbuild,
         opencode: overrides?.opencode ?? defaultsRef.current.opencode,
         openclaw: overrides?.openclaw ?? defaultsRef.current.openclaw,

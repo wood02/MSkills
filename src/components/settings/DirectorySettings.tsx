@@ -17,6 +17,7 @@ interface DirectorySettingsProps {
   claudeDir?: string;
   codexDir?: string;
   geminiDir?: string;
+  antigravityDir?: string;
   grokDir?: string;
   opencodeDir?: string;
   openclawDir?: string;
@@ -37,6 +38,7 @@ export function DirectorySettings({
   claudeDir,
   codexDir,
   geminiDir,
+  antigravityDir,
   grokDir,
   opencodeDir,
   openclawDir,
@@ -130,6 +132,21 @@ export function DirectorySettings({
           onChange={(val) => onDirectoryChange("gemini", val)}
           onBrowse={() => onBrowseDirectory("gemini")}
           onReset={() => onResetDirectory("gemini")}
+        />
+
+        <DirectoryInput
+          label={t("settings.antigravityConfigDir", {
+            defaultValue: "Antigravity 配置目录",
+          })}
+          description={undefined}
+          value={antigravityDir}
+          resolvedValue={resolvedDirs.antigravity}
+          placeholder={t("settings.browsePlaceholderAntigravity", {
+            defaultValue: "默认为 ~/.gemini/config",
+          })}
+          onChange={(val) => onDirectoryChange("antigravity", val)}
+          onBrowse={() => onBrowseDirectory("antigravity")}
+          onReset={() => onResetDirectory("antigravity")}
         />
 
         <DirectoryInput

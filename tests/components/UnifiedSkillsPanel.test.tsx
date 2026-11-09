@@ -1301,7 +1301,7 @@ describe("UnifiedSkillsPanel", () => {
         row!.querySelectorAll<HTMLButtonElement>("button[aria-pressed]"),
       );
 
-      expect(appToggleButtons).toHaveLength(8);
+      expect(appToggleButtons).toHaveLength(9);
       appToggleButtons.forEach((button) => expect(button).toBeDisabled());
       expect(screen.getByTitle("skills.uninstall")).toBeDisabled();
       await userEvent.setup().click(appToggleButtons[0]);
