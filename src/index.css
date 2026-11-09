@@ -296,3 +296,35 @@ input[type="password"]::-ms-clear {
     flex: 1 1 0%;
   }
 }
+
+/* Antigravity official ratio gradient styles (Plan A: Blue 50% + Green 18% + Yellow 15% + Red 17%) */
+.bg-antigravity-gradient-bar {
+  background: linear-gradient(
+    to top,
+    #3186ff 0%,
+    #3186ff 45%,
+    #00b95c 65%,
+    #fbbc04 82%,
+    #fc413d 100%
+  );
+}
+
+.bg-antigravity-gradient-badge {
+  background: linear-gradient(
+    135deg,
+    #3186ff 0%,
+    #3186ff 40%,
+    #00b95c 62%,
+    #fbbc04 80%,
+    #fc413d 100%
+  );
+}
+
+.bg-antigravity-gradient-ring {
+  background: linear-gradient(
+    135deg,
+    rgba(49, 134, 255, 0.15) 0%,
+    rgba(0, 185, 92, 0.12) 60%,
+    rgba(252, 65, 61, 0.12) 100%
+  );
+}

@@ -94,7 +94,7 @@ impl PromptService {
             return upsert_pi_prompt(state, id, prompt);
         }
 
-        if matches!(app, AppType::Mcode | AppType::Dsh) {
+        if matches!(app, AppType::Mcode | AppType::Dsh | AppType::Antigravity) {
             return upsert_native_prompt(state, &app, id, prompt, &prompt_file_path(&app)?);
         }
 
@@ -129,7 +129,7 @@ impl PromptService {
         if matches!(app, AppType::Pi) {
             return delete_pi_prompt(state, id);
         }
-        let _guard = if matches!(app, AppType::Mcode | AppType::Dsh) {
+        let _guard = if matches!(app, AppType::Mcode | AppType::Dsh | AppType::Antigravity) {
             Some(
                 NATIVE_PROMPT_LOCK
                     .lock()
@@ -154,7 +154,7 @@ impl PromptService {
         if matches!(app, AppType::Pi) {
             return enable_pi_prompt(state, id);
         }
-        if matches!(app, AppType::Mcode | AppType::Dsh) {
+        if matches!(app, AppType::Mcode | AppType::Dsh | AppType::Antigravity) {
             return enable_native_prompt(state, &app, id, &prompt_file_path(&app)?);
         }
 
@@ -288,7 +288,7 @@ impl PromptService {
             return Ok(());
         }
 
-        let _guard = if matches!(app, AppType::Mcode | AppType::Dsh) {
+        let _guard = if matches!(app, AppType::Mcode | AppType::Dsh | AppType::Antigravity) {
             Some(
                 NATIVE_PROMPT_LOCK
                     .lock()

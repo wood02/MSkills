@@ -801,7 +801,10 @@
     "piConfigDirDescription": "覆寫 Pi 設定目錄（models.json、指示檔案、提示、Skills 與工作階段）。",
     "dshConfigDir": "DSH 設定目錄",
     "dshConfigDirDescription": "選擇 DSH 用戶端實際使用的根目錄。留空時遵循 DSH_HOME，未設定時使用 ~/.dsh；修改此項不會搬移檔案或變更 DSH 用戶端設定。",
+    "antigravityConfigDir": "Antigravity 設定目錄",
+    "antigravityConfigDirDescription": "覆寫 Antigravity 設定目錄（mcp_config.json、GEMINI.md 與 Skills）。",
     "browsePlaceholderDsh": "例如：/home/<您的帳號>/.dsh",
+    "browsePlaceholderAntigravity": "例如：/home/<您的帳號>/.gemini/config",
     "browsePlaceholderClaude": "例如：/home/<您的帳號>/.claude",
     "browsePlaceholderCodex": "例如：/home/<您的帳號>/.codex",
     "browsePlaceholderGemini": "例如：/home/<您的帳號>/.gemini",
@@ -927,7 +930,8 @@
     "hermes": "Hermes",
     "pi": "Pi",
     "mcode": "MiniMax Code",
-    "dsh": "DeepSeek Harness"
+    "dsh": "DeepSeek Harness",
+    "antigravity": "Antigravity"
   },
   "pi": {
     "empty": {
@@ -2047,7 +2051,8 @@
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
         "mcode": "MiniMax Code",
-        "dsh": "DeepSeek Harness"
+        "dsh": "DeepSeek Harness",
+        "antigravity": "Antigravity"
       }
     },
     "userLevelPath": "使用者級 MCP 設定路徑",

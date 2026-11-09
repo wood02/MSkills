@@ -18,6 +18,8 @@ pub struct McpApps {
     #[serde(default)]
     pub gemini: bool,
     #[serde(default)]
+    pub antigravity: bool,
+    #[serde(default)]
     pub grokbuild: bool,
     #[serde(default)]
     pub opencode: bool,
@@ -32,6 +34,7 @@ impl McpApps {
             AppType::Claude => self.claude,
             AppType::Codex => self.codex,
             AppType::Gemini => self.gemini,
+            AppType::Antigravity => self.antigravity,
             AppType::GrokBuild => self.grokbuild,
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false, // OpenClaw doesn't support MCP
@@ -49,6 +52,7 @@ impl McpApps {
             AppType::Claude => self.claude = enabled,
             AppType::Codex => self.codex = enabled,
             AppType::Gemini => self.gemini = enabled,
+            AppType::Antigravity => self.antigravity = enabled,
             AppType::GrokBuild => self.grokbuild = enabled,
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {} // OpenClaw doesn't support MCP, ignore
@@ -71,6 +75,9 @@ impl McpApps {
         }
         if self.gemini {
             apps.push(AppType::Gemini);
+        }
+        if self.antigravity {
+            apps.push(AppType::Antigravity);
         }
         if self.grokbuild {
             apps.push(AppType::GrokBuild);
@@ -96,6 +103,7 @@ impl McpApps {
             && !self.claude
             && !self.codex
             && !self.gemini
+            && !self.antigravity
             && !self.grokbuild
             && !self.opencode
             && !self.hermes
@@ -117,6 +125,8 @@ pub struct SkillApps {
     #[serde(default)]
     pub gemini: bool,
     #[serde(default)]
+    pub antigravity: bool,
+    #[serde(default)]
     pub grokbuild: bool,
     #[serde(default)]
     pub opencode: bool,
@@ -133,6 +143,7 @@ impl SkillApps {
             AppType::Claude => self.claude,
             AppType::Codex => self.codex,
             AppType::Gemini => self.gemini,
+            AppType::Antigravity => self.antigravity,
             AppType::GrokBuild => self.grokbuild,
             AppType::OpenCode => self.opencode,
             AppType::Hermes => self.hermes,
@@ -150,6 +161,7 @@ impl SkillApps {
             AppType::Claude => self.claude = enabled,
             AppType::Codex => self.codex = enabled,
             AppType::Gemini => self.gemini = enabled,
+            AppType::Antigravity => self.antigravity = enabled,
             AppType::GrokBuild => self.grokbuild = enabled,
             AppType::OpenCode => self.opencode = enabled,
             AppType::Hermes => self.hermes = enabled,
@@ -172,6 +184,9 @@ impl SkillApps {
         }
         if self.gemini {
             apps.push(AppType::Gemini);
+        }
+        if self.antigravity {
+            apps.push(AppType::Antigravity);
         }
         if self.grokbuild {
             apps.push(AppType::GrokBuild);
@@ -200,6 +215,7 @@ impl SkillApps {
             && !self.claude
             && !self.codex
             && !self.gemini
+            && !self.antigravity
             && !self.grokbuild
             && !self.opencode
             && !self.hermes
@@ -419,6 +435,7 @@ pub enum AppType {
     ClaudeDesktop,
     Codex,
     Gemini,
+    Antigravity,
     GrokBuild,
     OpenCode,
     OpenClaw,
@@ -435,6 +452,7 @@ impl AppType {
             AppType::ClaudeDesktop => "claude-desktop",
             AppType::Codex => "codex",
             AppType::Gemini => "gemini",
+            AppType::Antigravity => "antigravity",
             AppType::GrokBuild => "grokbuild",
             AppType::OpenCode => "opencode",
             AppType::OpenClaw => "openclaw",
@@ -459,6 +477,7 @@ impl AppType {
                 | AppType::Pi
                 | AppType::Mcode
                 | AppType::Dsh
+                | AppType::Antigravity
         )
     }
 
@@ -476,6 +495,7 @@ impl AppType {
             AppType::ClaudeDesktop,
             AppType::Codex,
             AppType::Gemini,
+            AppType::Antigravity,
             AppType::GrokBuild,
             AppType::OpenCode,
             AppType::OpenClaw,
@@ -498,6 +518,7 @@ impl FromStr for AppType {
             "claude-desktop" | "claude_desktop" | "claudedesktop" => Ok(AppType::ClaudeDesktop),
             "codex" => Ok(AppType::Codex),
             "gemini" => Ok(AppType::Gemini),
+            "antigravity" | "agy" => Ok(AppType::Antigravity),
             "grokbuild" | "grok-build" | "grok_build" | "grok" => Ok(AppType::GrokBuild),
             "opencode" => Ok(AppType::OpenCode),
             "openclaw" => Ok(AppType::OpenClaw),
@@ -507,8 +528,8 @@ impl FromStr for AppType {
             "dsh" | "deepseek-harness" => Ok(AppType::Dsh),
             other => Err(AppError::localized(
                 "unsupported_app",
-                format!("不支持的应用标识: '{other}'。可选值: claude, claude-desktop, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, dsh。"),
-                format!("Unsupported app id: '{other}'. Allowed: claude, claude-desktop, codex, gemini, grokbuild, opencode, openclaw, hermes, pi."),
+                format!("不支持的应用标识: '{other}'。可选值: claude, claude-desktop, codex, gemini, antigravity, grokbuild, opencode, openclaw, hermes, pi, mcode, dsh。"),
+                format!("Unsupported app id: '{other}'. Allowed: claude, claude-desktop, codex, gemini, antigravity, grokbuild, opencode, openclaw, hermes, pi, mcode, dsh."),
             )),
         }
     }
@@ -548,7 +569,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode.as_ref(),
             AppType::OpenClaw => self.openclaw.as_ref(),
             AppType::Hermes => self.hermes.as_ref(),
-            AppType::Pi | AppType::Mcode | AppType::Dsh => None,
+            AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity => None,
         }
     }
 
@@ -563,7 +584,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode = snippet,
             AppType::OpenClaw => self.openclaw = snippet,
             AppType::Hermes => self.hermes = snippet,
-            AppType::Pi | AppType::Mcode | AppType::Dsh => {}
+            AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity => {}
         }
     }
 }
@@ -889,7 +910,7 @@ impl MultiAppConfig {
             AppType::Hermes => &mut config.prompts.hermes.prompts,
             // Pi was added after prompts moved to SQLite. Keeping it out of
             // this legacy config avoids a second, unused prompt state.
-            AppType::Pi | AppType::Mcode | AppType::Dsh => return Ok(false),
+            AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity => return Ok(false),
         };
 
         prompts.insert(id, prompt);
@@ -933,7 +954,7 @@ impl MultiAppConfig {
                 AppType::OpenCode => &self.mcp.opencode.servers,
                 AppType::OpenClaw => continue, // OpenClaw MCP is still in development, skip
                 AppType::Hermes => continue,   // Hermes didn't exist in v3.6.x, skip
-                AppType::Pi | AppType::Mcode | AppType::Dsh => continue, // Pi didn't exist in v3.6.x, skip
+                AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity => continue, // Pi didn't exist in v3.6.x, skip
             };
 
             for (id, entry) in old_servers {

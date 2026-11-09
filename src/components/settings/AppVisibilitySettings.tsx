@@ -30,6 +30,7 @@ const APP_CONFIG: Array<{
   },
   { id: "codex", icon: "codex", nameKey: "apps.codex" },
   { id: "gemini", icon: "gemini", nameKey: "apps.gemini" },
+  { id: "antigravity", icon: "antigravity", nameKey: "apps.antigravity" },
   { id: "grokbuild", icon: "grok", nameKey: "apps.grokbuild" },
   { id: "opencode", icon: "opencode", nameKey: "apps.opencode" },
   { id: "openclaw", icon: "openclaw", nameKey: "apps.openclaw" },

@@ -56,6 +56,9 @@ impl McpService {
         if prev_apps.gemini && !server.apps.gemini {
             Self::remove_server_from_app(state, &server.id, &AppType::Gemini)?;
         }
+        if prev_apps.antigravity && !server.apps.antigravity {
+            Self::remove_server_from_app(state, &server.id, &AppType::Antigravity)?;
+        }
         if prev_apps.grokbuild && !server.apps.grokbuild {
             Self::remove_server_from_app(state, &server.id, &AppType::GrokBuild)?;
         }
@@ -181,6 +184,9 @@ impl McpService {
             AppType::Gemini => {
                 mcp::sync_single_server_to_gemini(&Default::default(), &server.id, &server.server)?;
             }
+            AppType::Antigravity => {
+                mcp::antigravity::sync_server(&server.id, &server.server)?;
+            }
             AppType::GrokBuild => {
                 mcp::sync_single_server_to_grokbuild(
                     &Default::default(),
@@ -234,6 +240,7 @@ impl McpService {
             }
             AppType::Codex => mcp::remove_server_from_codex(id)?,
             AppType::Gemini => mcp::remove_server_from_gemini(id)?,
+            AppType::Antigravity => mcp::antigravity::remove_server(id)?,
             AppType::GrokBuild => mcp::remove_server_from_grokbuild(id)?,
             AppType::OpenCode => {
                 mcp::remove_server_from_opencode(id)?;
@@ -591,10 +598,11 @@ impl McpService {
         let mut total = 0;
         let mut failures: Vec<String> = Vec::new();
 
-        let results: [(&str, Result<usize, AppError>); 8] = [
+        let results: [(&str, Result<usize, AppError>); 9] = [
             ("claude", Self::import_from_claude(state)),
             ("codex", Self::import_from_codex(state)),
             ("gemini", Self::import_from_gemini(state)),
+            ("antigravity", mcp::antigravity::import(state)),
             ("grokbuild", Self::import_from_grokbuild(state)),
             ("opencode", Self::import_from_opencode(state)),
             ("hermes", Self::import_from_hermes(state)),

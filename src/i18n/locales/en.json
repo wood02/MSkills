@@ -801,7 +801,10 @@
     "piConfigDirDescription": "Override the Pi configuration directory (models.json, instruction files, prompts, skills, and sessions).",
     "dshConfigDir": "DSH Configuration Directory",
     "dshConfigDirDescription": "Select the root directory used by your DSH client. Leave blank to follow DSH_HOME, or ~/.dsh when unset. This does not move files or change the DSH client settings.",
+    "antigravityConfigDir": "Antigravity Configuration Directory",
+    "antigravityConfigDirDescription": "Override Antigravity configuration directory (mcp_config.json, GEMINI.md, and Skills).",
     "browsePlaceholderDsh": "e.g., /home/<your-username>/.dsh",
+    "browsePlaceholderAntigravity": "e.g., /home/<your-username>/.gemini/config",
     "browsePlaceholderClaude": "e.g., /home/<your-username>/.claude",
     "browsePlaceholderCodex": "e.g., /home/<your-username>/.codex",
     "browsePlaceholderGemini": "e.g., /home/<your-username>/.gemini",
@@ -926,7 +929,8 @@
     "hermes": "Hermes",
     "pi": "Pi",
     "mcode": "MiniMax Code",
-    "dsh": "DeepSeek Harness"
+    "dsh": "DeepSeek Harness",
+    "antigravity": "Antigravity"
   },
   "pi": {
     "empty": {
@@ -2046,7 +2050,8 @@
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
         "mcode": "MiniMax Code",
-        "dsh": "DeepSeek Harness"
+        "dsh": "DeepSeek Harness",
+        "antigravity": "Antigravity"
       }
     },
     "userLevelPath": "User-level MCP path",

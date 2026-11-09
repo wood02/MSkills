@@ -538,6 +538,7 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
         | AppType::Pi
         | AppType::Mcode
         | AppType::Dsh
+        | AppType::Antigravity
         | AppType::ClaudeDesktop => false,
     }
 }
@@ -615,6 +616,7 @@ pub(crate) fn remove_common_config_from_settings(
         | AppType::Pi
         | AppType::Mcode
         | AppType::Dsh
+        | AppType::Antigravity
         | AppType::ClaudeDesktop => Ok(settings.clone()),
     }
 }
@@ -677,6 +679,7 @@ fn apply_common_config_to_settings(
         | AppType::Pi
         | AppType::Mcode
         | AppType::Dsh
+        | AppType::Antigravity
         | AppType::ClaudeDesktop => Ok(settings.clone()),
     }
 }
@@ -1482,6 +1485,11 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                 "Pi providers use the Pi provider service".to_string(),
             ));
         }
+        AppType::Antigravity => {
+            return Err(AppError::InvalidInput(
+                "Antigravity does not use provider switching".to_string(),
+            ));
+        }
     }
     Ok(())
 }
@@ -1707,7 +1715,10 @@ pub fn sync_current_to_live(state: &AppState) -> Result<(), AppError> {
 
     // Sync providers based on mode
     for app_type in AppType::all() {
-        if matches!(app_type, AppType::Pi | AppType::Mcode | AppType::Dsh) {
+        if matches!(
+            app_type,
+            AppType::Pi | AppType::Mcode | AppType::Dsh | AppType::Antigravity
+        ) {
             continue;
         }
         let result = if app_type.is_additive_mode() {
@@ -1867,6 +1878,9 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
         AppType::Pi => Err(AppError::InvalidInput(
             "Pi providers are read from Pi's native models file".to_string(),
         )),
+        AppType::Antigravity => Err(AppError::InvalidInput(
+            "Antigravity does not use provider switching".to_string(),
+        )),
     }
 }
 
@@ -1981,7 +1995,8 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
         | AppType::Hermes
         | AppType::Pi
         | AppType::Mcode
-        | AppType::Dsh => {
+        | AppType::Dsh
+        | AppType::Antigravity => {
             unreachable!("additive mode apps are handled by early return")
         }
     };

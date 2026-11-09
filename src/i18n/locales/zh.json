@@ -801,7 +801,10 @@
     "piConfigDirDescription": "覆盖 Pi 配置目录（models.json、指令文件、提示词、Skills 与会话）。",
     "dshConfigDir": "DSH 配置目录",
     "dshConfigDirDescription": "选择 DSH 客户端实际使用的根目录。留空时遵循 DSH_HOME，未设置时使用 ~/.dsh；修改此项不会搬迁文件或更改 DSH 客户端设置。",
+    "antigravityConfigDir": "Antigravity 配置目录",
+    "antigravityConfigDirDescription": "覆盖 Antigravity 配置目录（mcp_config.json、GEMINI.md 与 Skills）。",
     "browsePlaceholderDsh": "例如：/home/<你的用户名>/.dsh",
+    "browsePlaceholderAntigravity": "例如：/home/<你的用户名>/.gemini/config",
     "browsePlaceholderClaude": "例如：/home/<你的用户名>/.claude",
     "browsePlaceholderCodex": "例如：/home/<你的用户名>/.codex",
     "browsePlaceholderGemini": "例如：/home/<你的用户名>/.gemini",
@@ -926,7 +929,8 @@
     "hermes": "Hermes",
     "pi": "Pi",
     "mcode": "MiniMax Code",
-    "dsh": "DeepSeek Harness"
+    "dsh": "DeepSeek Harness",
+    "antigravity": "Antigravity"
   },
   "pi": {
     "empty": {
@@ -2046,7 +2050,8 @@
         "openclaw": "OpenClaw",
         "hermes": "Hermes",
         "mcode": "MiniMax Code",
-        "dsh": "DeepSeek Harness"
+        "dsh": "DeepSeek Harness",
+        "antigravity": "Antigravity"
       }
     },
     "userLevelPath": "用户级 MCP 配置路径",

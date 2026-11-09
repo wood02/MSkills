@@ -99,6 +99,14 @@ pub async fn get_config_status(
 
             Ok(ConfigStatus { exists, path })
         }
+        AppType::Antigravity => {
+            let config_path = crate::antigravity_config::mcp_config_path();
+            let dir = crate::antigravity_config::config_dir();
+            Ok(ConfigStatus {
+                exists: config_path.exists() || dir.exists(),
+                path: dir.to_string_lossy().to_string(),
+            })
+        }
         AppType::GrokBuild => {
             let config_path = crate::grok_config::get_grok_config_path();
             let exists = config_path.exists();
@@ -177,6 +185,10 @@ pub async fn get_config_dir(app: String, use_default: Option<bool>) -> Result<St
         }
         AppType::Codex => codex_config::get_codex_config_dir(),
         AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+        AppType::Antigravity if use_default.unwrap_or(false) => {
+            crate::antigravity_config::default_config_dir()
+        }
+        AppType::Antigravity => crate::antigravity_config::config_dir(),
         AppType::GrokBuild => crate::grok_config::get_grok_config_dir(),
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
@@ -202,6 +214,7 @@ pub async fn open_config_folder(handle: AppHandle, app: String) -> Result<bool, 
         }
         AppType::Codex => codex_config::get_codex_config_dir(),
         AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+        AppType::Antigravity => crate::antigravity_config::config_dir(),
         AppType::GrokBuild => crate::grok_config::get_grok_config_dir(),
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),

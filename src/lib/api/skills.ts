@@ -8,6 +8,7 @@ export type AppType =
   | "claude-desktop"
   | "codex"
   | "gemini"
+  | "antigravity"
   | "grokbuild"
   | "opencode"
   | "openclaw"
@@ -22,6 +23,7 @@ export interface SkillApps {
   "claude-desktop"?: boolean;
   codex: boolean;
   gemini: boolean;
+  antigravity?: boolean;
   grokbuild?: boolean;
   opencode: boolean;
   openclaw: boolean;

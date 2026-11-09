@@ -391,6 +391,7 @@ const UnifiedSkillsPanel = React.forwardRef<
       pi: 0,
       mcode: 0,
       dsh: 0,
+      antigravity: 0,
     };
     filteredSkills.forEach((skill) => {
       for (const app of SKILLS_APP_IDS) {

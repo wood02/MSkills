@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use rusqlite::{params, OptionalExtension, Row};
 
 const MCP_SERVER_SELECT: &str =
-    "SELECT id, name, server_config, description, homepage, docs, tags, enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild, enabled_opencode, enabled_hermes, enabled_mcode, enabled_dsh FROM mcp_servers";
+    "SELECT id, name, server_config, description, homepage, docs, tags, enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild, enabled_opencode, enabled_hermes, enabled_mcode, enabled_dsh, enabled_antigravity FROM mcp_servers";
 
 fn row_to_mcp_server(row: &Row<'_>) -> rusqlite::Result<(String, McpServer)> {
     let id: String = row.get(0)?;
@@ -39,6 +39,7 @@ fn row_to_mcp_server(row: &Row<'_>) -> rusqlite::Result<(String, McpServer)> {
                 claude: enabled_claude,
                 codex: enabled_codex,
                 gemini: enabled_gemini,
+                antigravity: row.get(15)?,
                 grokbuild: enabled_grokbuild,
                 opencode: enabled_opencode,
                 hermes: enabled_hermes,
@@ -89,6 +90,7 @@ impl Database {
             AppType::Claude => Some("enabled_claude"),
             AppType::Codex => Some("enabled_codex"),
             AppType::Gemini => Some("enabled_gemini"),
+            AppType::Antigravity => Some("enabled_antigravity"),
             AppType::GrokBuild => Some("enabled_grokbuild"),
             AppType::OpenCode => Some("enabled_opencode"),
             AppType::Hermes => Some("enabled_hermes"),
@@ -124,8 +126,8 @@ impl Database {
         conn.execute(
             "INSERT OR REPLACE INTO mcp_servers (
                 id, name, server_config, description, homepage, docs, tags,
-                enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild, enabled_opencode, enabled_hermes, enabled_mcode, enabled_dsh
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild, enabled_opencode, enabled_hermes, enabled_mcode, enabled_dsh, enabled_antigravity
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 server.id,
                 server.name,
@@ -145,6 +147,7 @@ impl Database {
                 server.apps.hermes,
                 server.apps.mcode,
                 server.apps.dsh,
+                server.apps.antigravity,
             ],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;

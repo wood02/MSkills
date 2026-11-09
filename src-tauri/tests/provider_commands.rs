@@ -375,6 +375,7 @@ command = "say"
                 claude: false,
                 codex: true, // 启用 Codex
                 gemini: false,
+                antigravity: false,
                 grokbuild: false,
                 opencode: false,
                 hermes: false,
