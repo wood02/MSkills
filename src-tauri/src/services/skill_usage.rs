@@ -557,6 +557,11 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
             .and_then(Value::as_i64)
             .map(|i| i.to_string())
             .unwrap_or_else(|| fallback_id.to_string());
+        let session_id = if !context.session.is_empty() {
+            &context.session
+        } else {
+            fallback_id
+        };
         if step_type == "USER_INPUT" {
             context.turn = format!("step-{step_index}");
             if let Some(content) = row.get("content").and_then(Value::as_str) {
@@ -571,7 +576,7 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                             events.push(event(
                                 context,
                                 app,
-                                &format!("user-{step_index}"),
+                                &format!("{session_id}:user-{step_index}"),
                                 skill,
                                 at,
                                 true,
@@ -601,7 +606,7 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                         events.push(event(
                             context,
                             app,
-                            &format!("call-{step_index}-{idx}"),
+                            &format!("{session_id}:call-{step_index}-{idx}"),
                             skill,
                             at,
                             false,
@@ -614,7 +619,7 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                             events.push(event(
                                 context,
                                 app,
-                                &format!("call-{step_index}-{idx}"),
+                                &format!("{session_id}:call-{step_index}-{idx}"),
                                 skill,
                                 at,
                                 false,
