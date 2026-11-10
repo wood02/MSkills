@@ -20,16 +20,18 @@ const notices = vi.hoisted(() => ({
 vi.mock("sonner", () => ({ toast: notices }));
 vi.mock("@/components/MarkdownEditor", () => ({
   default: ({
+    ariaLabel = "SKILL.md",
     value,
     onChange,
     readOnly,
   }: {
+    ariaLabel?: string;
     value: string;
     onChange: (value: string) => void;
     readOnly: boolean;
   }) => (
     <textarea
-      aria-label="SKILL.md"
+      aria-label={ariaLabel}
       value={value}
       readOnly={readOnly}
       onChange={(event) => onChange(event.target.value)}
@@ -241,6 +243,71 @@ describe("SkillDocumentPanel", () => {
     expect(
       await screen.findByRole("heading", { name: "Original" }),
     ).toBeVisible();
+  });
+
+  it("renders the directory file tree, switches to auxiliary files, and saves edits with discard confirmation", async () => {
+    const scriptDoc: SkillDocument = {
+      content: 'print("hello from script")\n',
+      revision: "1:script-old",
+      path: "/tmp/skills/example/scripts/run.py",
+    };
+    vi.spyOn(skillsApi, "listFiles").mockResolvedValue([
+      { relativePath: "SKILL.md", size: 120 },
+      { relativePath: "scripts/run.py", size: 28 },
+    ]);
+    vi.spyOn(skillsApi, "readFile").mockResolvedValue(scriptDoc);
+    vi.spyOn(skillsApi, "saveFile").mockImplementation(
+      async (_id, _relPath, content) => ({
+        document: { ...scriptDoc, content, revision: "1:script-new" },
+        skill,
+        backupPath: "/tmp/backup-script",
+        syncErrors: [],
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Original" })).toBeVisible(),
+    );
+    const scriptButton = await screen.findByRole("button", {
+      name: /run\.py/i,
+    });
+    await user.click(scriptButton);
+
+    await waitFor(() =>
+      expect(screen.getByText('print("hello from script")')).toBeVisible(),
+    );
+    expect(skillsApi.readFile).toHaveBeenCalledWith(skill.id, "scripts/run.py");
+
+    await user.click(
+      screen.getByRole("button", { name: "skills.document.edit" }),
+    );
+    const editor = screen.getByRole("textbox", { name: "scripts/run.py" });
+    await user.clear(editor);
+    await user.type(editor, 'print("updated script")');
+
+    // Attempt to switch back to SKILL.md while dirty -> prompts confirmation
+    await user.click(screen.getByRole("button", { name: /SKILL\.md/i }));
+    expect(
+      screen.getByRole("button", { name: "skills.document.discard" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "common.cancel" }));
+    expect(screen.getByRole("textbox", { name: "scripts/run.py" })).toHaveValue(
+      'print("updated script")',
+    );
+
+    // Save the auxiliary file
+    await user.click(screen.getByRole("button", { name: "common.save" }));
+    await waitFor(() =>
+      expect(skillsApi.saveFile).toHaveBeenCalledWith(
+        skill.id,
+        "scripts/run.py",
+        'print("updated script")',
+        scriptDoc.revision,
+      ),
+    );
   });
 });
 

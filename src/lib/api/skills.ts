@@ -62,6 +62,11 @@ export interface SkillDocument {
   path: string;
 }
 
+export interface SkillFileEntry {
+  relativePath: string;
+  size: number;
+}
+
 export interface SkillDocumentSaveResult {
   document: SkillDocument;
   skill: InstalledSkill;
@@ -209,6 +214,14 @@ export const skillsApi = {
     return await invoke("read_skill_document", { id });
   },
 
+  async listFiles(id: string): Promise<SkillFileEntry[]> {
+    return await invoke("list_skill_files", { id });
+  },
+
+  async readFile(id: string, relativePath: string): Promise<SkillDocument> {
+    return await invoke("read_skill_file", { id, relativePath });
+  },
+
   async createLocal(
     directory: string,
     description: string,
@@ -223,6 +236,20 @@ export const skillsApi = {
   ): Promise<SkillDocumentSaveResult> {
     return await invoke("save_skill_document", {
       id,
+      content,
+      expectedRevision,
+    });
+  },
+
+  async saveFile(
+    id: string,
+    relativePath: string,
+    content: string,
+    expectedRevision: string,
+  ): Promise<SkillDocumentSaveResult> {
+    return await invoke("save_skill_file", {
+      id,
+      relativePath,
       content,
       expectedRevision,
     });

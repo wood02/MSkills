@@ -240,3 +240,81 @@ fn create_local_skill_writes_editable_template_and_rejects_duplicates() {
         );
     }
 }
+
+#[test]
+fn list_read_and_save_auxiliary_skill_files_preserve_manifest_metadata() {
+    let _guard = test_mutex().lock().unwrap();
+    let (state, skill, path) = fixture();
+    fs::create_dir_all(path.join("scripts")).unwrap();
+    fs::create_dir_all(path.join("references")).unwrap();
+    fs::create_dir_all(path.join(".git")).unwrap();
+    fs::create_dir_all(path.join("__pycache__")).unwrap();
+    fs::write(path.join("scripts/run.py"), "print('v1')\n").unwrap();
+    fs::write(path.join("references/guide.md"), "# Guide v1\n").unwrap();
+    fs::write(path.join(".git/config"), "secret").unwrap();
+    fs::write(path.join("__pycache__/run.cpython.pyc"), [0u8, 1, 2]).unwrap();
+
+    let files = SkillService::list_skill_files(&state.db, &skill.id).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+    assert_eq!(
+        paths,
+        vec![
+            "SKILL.md",
+            "references/guide.md",
+            "script.py",
+            "scripts/run.py"
+        ]
+    );
+
+    let script_doc = SkillService::read_skill_file(&state.db, &skill.id, "scripts/run.py").unwrap();
+    assert_eq!(script_doc.content, "print('v1')\n");
+
+    let saved = SkillService::save_skill_file(
+        &state.db,
+        &skill.id,
+        "scripts/run.py",
+        "print('v2')\n",
+        &script_doc.revision,
+    )
+    .unwrap();
+    assert_eq!(saved.document.content, "print('v2')\n");
+    assert_eq!(
+        fs::read_to_string(path.join("scripts/run.py")).unwrap(),
+        "print('v2')\n"
+    );
+    assert_eq!(saved.skill.name, "Original");
+    assert_eq!(
+        saved.skill.description.as_deref(),
+        Some("Original description")
+    );
+
+    // Empty auxiliary text files are allowed
+    let empty_saved = SkillService::save_skill_file(
+        &state.db,
+        &skill.id,
+        "scripts/run.py",
+        "",
+        &saved.document.revision,
+    )
+    .unwrap();
+    assert_eq!(empty_saved.document.content, "");
+    assert_eq!(fs::read_to_string(path.join("scripts/run.py")).unwrap(), "");
+
+    for bad_rel in [
+        "../outside.md",
+        "scripts/../../outside.md",
+        ".git/config",
+        "__pycache__/run.cpython.pyc",
+        "/etc/passwd",
+        "",
+    ] {
+        assert!(
+            SkillService::read_skill_file(&state.db, &skill.id, bad_rel).is_err(),
+            "must reject read for {bad_rel:?}"
+        );
+        assert!(
+            SkillService::save_skill_file(&state.db, &skill.id, bad_rel, "x", "rev").is_err(),
+            "must reject save for {bad_rel:?}"
+        );
+    }
+}
