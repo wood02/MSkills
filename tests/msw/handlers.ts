@@ -51,6 +51,9 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_current_skill_group`, () => success(null)),
   http.post(`${TAURI_ENDPOINT}/check_skill_updates`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/list_skill_files`, () =>
+    success([{ relativePath: "SKILL.md", size: 0 }]),
+  ),
   http.post(`${TAURI_ENDPOINT}/get_skill_usage`, () =>
     success({
       scanning: false,

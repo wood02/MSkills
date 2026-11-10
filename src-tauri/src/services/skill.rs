@@ -379,6 +379,13 @@ pub struct SkillDocument {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFileEntry {
+    pub relative_path: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillDocumentSaveResult {
@@ -389,6 +396,8 @@ pub struct SkillDocumentSaveResult {
 }
 
 const MAX_SKILL_DOCUMENT_BYTES: u64 = 1024 * 1024;
+const MAX_SKILL_TREE_DEPTH: usize = 8;
+const MAX_SKILL_TREE_FILES: usize = 500;
 
 /// 导入已有 Skill 时，前端显式提交的启用应用选择
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2114,28 +2123,103 @@ impl SkillService {
         Ok(restored_skill)
     }
 
-    fn skill_document_path(skill: &InstalledSkill) -> Result<PathBuf> {
-        let directory = Self::require_valid_directory(&skill.directory)?;
-        let root = Self::get_ssot_dir()?.canonicalize()?;
-        let source = root.join(directory).canonicalize()?;
-        let path = source.join("SKILL.md").canonicalize()?;
-        if !source.starts_with(&root) || !path.starts_with(&source) || !path.is_file() {
-            return Err(anyhow!("SKILL.md 不在托管技能目录内，拒绝读写"));
-        }
-        Ok(path)
+    fn is_ignored_skill_tree_segment(segment: &str) -> bool {
+        segment.starts_with('.')
+            || matches!(
+                segment,
+                "node_modules" | "__pycache__" | "target" | "Thumbs.db"
+            )
     }
 
-    fn read_skill_document_at(skill: &InstalledSkill, path: &Path) -> Result<SkillDocument> {
+    fn normalize_skill_relative_path(relative_path: &str) -> Result<String> {
+        let trimmed = relative_path.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('/')
+            || trimmed.starts_with('\\')
+            || trimmed.chars().any(char::is_control)
+        {
+            return Err(anyhow!("无效的技能文件相对路径"));
+        }
+
+        let normalized_sep = trimmed.replace('\\', "/");
+        let mut segments = Vec::new();
+        for segment in normalized_sep.split('/') {
+            if segment.is_empty()
+                || segment == "."
+                || segment == ".."
+                || segment.contains(':')
+                || Self::is_ignored_skill_tree_segment(segment)
+            {
+                return Err(anyhow!("无效的技能文件相对路径: {relative_path}"));
+            }
+            segments.push(segment);
+        }
+
+        if segments.is_empty() || segments.len() > MAX_SKILL_TREE_DEPTH {
+            return Err(anyhow!("技能文件路径层级超出限制: {relative_path}"));
+        }
+
+        Ok(segments.join("/"))
+    }
+
+    fn skill_source_dir(skill: &InstalledSkill) -> Result<PathBuf> {
+        let directory = Self::require_valid_directory(&skill.directory)?;
+        let root = Self::get_ssot_dir()?.canonicalize()?;
+        let candidate = root.join(directory);
+        if Self::is_symlink(&candidate) {
+            return Err(anyhow!("技能目录不能是符号链接，拒绝读写"));
+        }
+        let source = candidate.canonicalize()?;
+        if !source.starts_with(&root) || !source.is_dir() {
+            return Err(anyhow!("技能目录不在托管目录内，拒绝读写"));
+        }
+        Ok(source)
+    }
+
+    fn skill_file_path(skill: &InstalledSkill, relative_path: &str) -> Result<(PathBuf, String)> {
+        let normalized = Self::normalize_skill_relative_path(relative_path)?;
+        let source = Self::skill_source_dir(skill)?;
+        let mut current = source.clone();
+        for segment in normalized.split('/') {
+            current.push(segment);
+            if Self::is_symlink(&current) {
+                return Err(anyhow!("{normalized} 包含符号链接，拒绝读写"));
+            }
+        }
+        let path = current.canonicalize()?;
+        if !path.starts_with(&source) || !path.is_file() {
+            return Err(anyhow!("{normalized} 不在托管技能目录内，拒绝读写"));
+        }
+        Ok((path, normalized))
+    }
+
+    fn skill_document_path(skill: &InstalledSkill) -> Result<PathBuf> {
+        Ok(Self::skill_file_path(skill, "SKILL.md")?.0)
+    }
+
+    fn read_skill_file_at(
+        skill: &InstalledSkill,
+        path: &Path,
+        display_name: &str,
+    ) -> Result<SkillDocument> {
         use sha2::{Digest, Sha256};
         use std::io::Read;
 
-        let mut content = String::new();
+        let mut bytes = Vec::new();
         fs::File::open(path)?
             .take(MAX_SKILL_DOCUMENT_BYTES + 1)
-            .read_to_string(&mut content)?;
-        if content.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
-            return Err(anyhow!("SKILL.md 超过 1 MiB，无法在应用内编辑"));
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
+            return Err(anyhow!("{display_name} 超过 1 MiB，无法在应用内编辑"));
         }
+        if bytes.contains(&0) {
+            return Err(anyhow!(
+                "{display_name} 为二进制文件，无法在应用内预览或编辑"
+            ));
+        }
+        let content = String::from_utf8(bytes).map_err(|_| {
+            anyhow!("{display_name} 不是有效的 UTF-8 文本文件，无法在应用内预览或编辑")
+        })?;
         Ok(SkillDocument {
             revision: format!(
                 "{}:{:x}",
@@ -2145,6 +2229,88 @@ impl SkillService {
             content,
             path: path.display().to_string(),
         })
+    }
+
+    fn read_skill_document_at(skill: &InstalledSkill, path: &Path) -> Result<SkillDocument> {
+        Self::read_skill_file_at(skill, path, "SKILL.md")
+    }
+
+    fn collect_skill_file_entries(
+        base: &Path,
+        current: &Path,
+        depth: usize,
+        entries: &mut Vec<SkillFileEntry>,
+    ) -> Result<()> {
+        if depth > MAX_SKILL_TREE_DEPTH || entries.len() >= MAX_SKILL_TREE_FILES {
+            return Ok(());
+        }
+        let mut dir_entries: Vec<fs::DirEntry> = fs::read_dir(current)
+            .with_context(|| format!("读取技能目录失败: {}", current.display()))?
+            .filter_map(|e| e.ok())
+            .collect();
+        dir_entries.sort_by_key(|e| e.file_name());
+
+        for entry in dir_entries {
+            if entries.len() >= MAX_SKILL_TREE_FILES {
+                break;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if Self::is_ignored_skill_tree_segment(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(meta) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            let file_type = meta.file_type();
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                Self::collect_skill_file_entries(base, &path, depth + 1, entries)?;
+            } else if file_type.is_file() {
+                if let Ok(rel) = path.strip_prefix(base) {
+                    let relative_path = rel.to_string_lossy().replace('\\', "/");
+                    entries.push(SkillFileEntry {
+                        relative_path,
+                        size: meta.len(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn list_skill_files(db: &Arc<Database>, id: &str) -> Result<Vec<SkillFileEntry>> {
+        let _guard = skill_state_read_guard();
+        let skill = db
+            .get_installed_skill(id)?
+            .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
+        let source = Self::skill_source_dir(&skill)?;
+        let mut entries = Vec::new();
+        Self::collect_skill_file_entries(&source, &source, 1, &mut entries)?;
+        entries.sort_by(
+            |a, b| match (a.relative_path.as_str(), b.relative_path.as_str()) {
+                ("SKILL.md", "SKILL.md") => std::cmp::Ordering::Equal,
+                ("SKILL.md", _) => std::cmp::Ordering::Less,
+                (_, "SKILL.md") => std::cmp::Ordering::Greater,
+                (left, right) => left.cmp(right),
+            },
+        );
+        Ok(entries)
+    }
+
+    pub fn read_skill_file(
+        db: &Arc<Database>,
+        id: &str,
+        relative_path: &str,
+    ) -> Result<SkillDocument> {
+        let _guard = skill_state_read_guard();
+        let skill = db
+            .get_installed_skill(id)?
+            .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
+        let (path, normalized) = Self::skill_file_path(&skill, relative_path)?;
+        Self::read_skill_file_at(&skill, &path, &normalized)
     }
 
     /// 在 SSOT 中从模板新建一个本地 Skill，默认不启用到任何应用。
@@ -2215,41 +2381,60 @@ impl SkillService {
         content: &str,
         expected_revision: &str,
     ) -> Result<SkillDocumentSaveResult> {
+        Self::save_skill_file(db, id, "SKILL.md", content, expected_revision)
+    }
+
+    pub fn save_skill_file(
+        db: &Arc<Database>,
+        id: &str,
+        relative_path: &str,
+        content: &str,
+        expected_revision: &str,
+    ) -> Result<SkillDocumentSaveResult> {
+        let normalized_rel = Self::normalize_skill_relative_path(relative_path)?;
+        let is_manifest = normalized_rel == "SKILL.md";
+
         if content.trim().is_empty() || content.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
-            return Err(anyhow!("SKILL.md 内容不能为空，且不能超过 1 MiB"));
+            return Err(anyhow!("{normalized_rel} 内容不能为空，且不能超过 1 MiB"));
         }
-        let text = content.trim_start_matches('\u{feff}');
-        let mut lines = text.lines();
-        let metadata = if lines.next() == Some("---") {
-            let mut front_matter = Vec::new();
-            let mut closed = false;
-            for line in lines {
-                if line.trim() == "---" {
-                    closed = true;
-                    break;
+
+        let parsed_metadata = if is_manifest {
+            let text = content.trim_start_matches('\u{feff}');
+            let mut lines = text.lines();
+            let metadata = if lines.next() == Some("---") {
+                let mut front_matter = Vec::new();
+                let mut closed = false;
+                for line in lines {
+                    if line.trim() == "---" {
+                        closed = true;
+                        break;
+                    }
+                    front_matter.push(line);
                 }
-                front_matter.push(line);
-            }
-            if !closed {
-                return Err(anyhow!("SKILL.md 的 YAML 元数据缺少结束分隔符 ---"));
-            }
-            serde_yaml::from_str::<SkillMetadata>(&front_matter.join("\n"))
-                .context("SKILL.md 的 YAML 元数据无效")?
+                if !closed {
+                    return Err(anyhow!("SKILL.md 的 YAML 元数据缺少结束分隔符 ---"));
+                }
+                serde_yaml::from_str::<SkillMetadata>(&front_matter.join("\n"))
+                    .context("SKILL.md 的 YAML 元数据无效")?
+            } else {
+                SkillMetadata {
+                    name: None,
+                    description: None,
+                }
+            };
+            Some(metadata)
         } else {
-            SkillMetadata {
-                name: None,
-                description: None,
-            }
+            None
         };
 
         let _guard = skill_state_write_guard();
         let mut skill = db
             .get_installed_skill(id)?
             .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
-        let path = Self::skill_document_path(&skill)?;
-        let original = Self::read_skill_document_at(&skill, &path)?;
+        let (path, normalized) = Self::skill_file_path(&skill, &normalized_rel)?;
+        let original = Self::read_skill_file_at(&skill, &path, &normalized)?;
         if original.revision != expected_revision {
-            return Err(anyhow!("SKILL.md 已被外部修改，请重新打开预览后再编辑"));
+            return Err(anyhow!("{normalized} 已被外部修改，请重新打开预览后再编辑"));
         }
         skill.apps.pi = Self::skill_exists_in_app(&skill.directory, &AppType::Pi);
         let source = Self::get_ssot_dir()?.join(&skill.directory);
@@ -2266,13 +2451,15 @@ impl SkillService {
             }
         }
         let backup_path = Self::create_uninstall_backup(&skill)?
-            .ok_or_else(|| anyhow!("无法备份 SKILL.md，取消保存"))?;
-        if Self::read_skill_document_at(&skill, &path)?.revision != expected_revision {
-            return Err(anyhow!("SKILL.md 已被外部修改，请重新打开预览后再编辑"));
+            .ok_or_else(|| anyhow!("无法备份 {normalized}，取消保存"))?;
+        if Self::read_skill_file_at(&skill, &path, &normalized)?.revision != expected_revision {
+            return Err(anyhow!("{normalized} 已被外部修改，请重新打开预览后再编辑"));
         }
         crate::config::write_text_file(&path, content)?;
-        skill.name = metadata.name.unwrap_or_else(|| skill.directory.clone());
-        skill.description = metadata.description;
+        if let Some(metadata) = parsed_metadata {
+            skill.name = metadata.name.unwrap_or_else(|| skill.directory.clone());
+            skill.description = metadata.description;
+        }
         skill.updated_at = Utc::now().timestamp();
         let persisted = (|| -> Result<()> {
             skill.content_hash = Some(Self::compute_dir_hash(&source)?);
@@ -2306,7 +2493,7 @@ impl SkillService {
             }
         }
         Ok(SkillDocumentSaveResult {
-            document: Self::read_skill_document_at(&skill, &path)?,
+            document: Self::read_skill_file_at(&skill, &path, &normalized)?,
             skill,
             backup_path: backup_path.display().to_string(),
             sync_errors,

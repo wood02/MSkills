@@ -8,9 +8,9 @@ use crate::app_config::{AppType, InstalledSkill, UnmanagedSkill};
 use crate::error::format_skill_error;
 use crate::services::skill::{
     DiscoverableSkill, ImportSkillSelection, MigrationResult, Skill, SkillBackupEntry,
-    SkillDocument, SkillDocumentSaveResult, SkillRepo, SkillService, SkillStorageLocation,
-    SkillUninstallResult, SkillUpdateInfo, SkillsShLeaderboardResult, SkillsShLeaderboardView,
-    SkillsShSearchResult,
+    SkillDocument, SkillDocumentSaveResult, SkillFileEntry, SkillRepo, SkillService,
+    SkillStorageLocation, SkillUninstallResult, SkillUpdateInfo, SkillsShLeaderboardResult,
+    SkillsShLeaderboardView, SkillsShSearchResult,
 };
 use crate::store::AppState;
 use std::str::FromStr;
@@ -66,6 +66,23 @@ pub fn read_skill_document(
 }
 
 #[tauri::command]
+pub fn list_skill_files(
+    id: String,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<SkillFileEntry>, String> {
+    SkillService::list_skill_files(&app_state.db, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_skill_file(
+    id: String,
+    relative_path: String,
+    app_state: State<'_, AppState>,
+) -> Result<SkillDocument, String> {
+    SkillService::read_skill_file(&app_state.db, &id, &relative_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn save_skill_document(
     id: String,
     content: String,
@@ -78,6 +95,23 @@ pub async fn save_skill_document(
     })
     .await
     .map_err(|e| format!("保存 SKILL.md 失败: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_skill_file(
+    id: String,
+    relative_path: String,
+    content: String,
+    expected_revision: String,
+    app_state: State<'_, AppState>,
+) -> Result<SkillDocumentSaveResult, String> {
+    let db = app_state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        SkillService::save_skill_file(&db, &id, &relative_path, &content, &expected_revision)
+    })
+    .await
+    .map_err(|e| format!("保存技能文件失败: {e}"))?
     .map_err(|e| e.to_string())
 }
 
