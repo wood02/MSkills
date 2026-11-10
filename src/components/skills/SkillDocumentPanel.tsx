@@ -377,7 +377,11 @@ export function SkillDocumentPanel({
           document && !error ? (
             <Button
               onClick={handleSave}
-              disabled={!dirty || !content.trim() || saving}
+              disabled={
+                !dirty ||
+                (selectedPath === "SKILL.md" && !content.trim()) ||
+                saving
+              }
             >
               {saving ? t("common.saving") : t("common.save")}
             </Button>

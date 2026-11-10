@@ -288,6 +288,18 @@ fn list_read_and_save_auxiliary_skill_files_preserve_manifest_metadata() {
         Some("Original description")
     );
 
+    // Empty auxiliary text files are allowed
+    let empty_saved = SkillService::save_skill_file(
+        &state.db,
+        &skill.id,
+        "scripts/run.py",
+        "",
+        &saved.document.revision,
+    )
+    .unwrap();
+    assert_eq!(empty_saved.document.content, "");
+    assert_eq!(fs::read_to_string(path.join("scripts/run.py")).unwrap(), "");
+
     for bad_rel in [
         "../outside.md",
         "scripts/../../outside.md",

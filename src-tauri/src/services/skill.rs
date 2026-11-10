@@ -2394,8 +2394,11 @@ impl SkillService {
         let normalized_rel = Self::normalize_skill_relative_path(relative_path)?;
         let is_manifest = normalized_rel == "SKILL.md";
 
-        if content.trim().is_empty() || content.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
-            return Err(anyhow!("{normalized_rel} 内容不能为空，且不能超过 1 MiB"));
+        if content.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
+            return Err(anyhow!("{normalized_rel} 超过 1 MiB，无法在应用内保存"));
+        }
+        if is_manifest && content.trim().is_empty() {
+            return Err(anyhow!("SKILL.md 内容不能为空"));
         }
 
         let parsed_metadata = if is_manifest {
