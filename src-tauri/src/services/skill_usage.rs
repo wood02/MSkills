@@ -333,7 +333,9 @@ fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
                             .and_then(|meta| meta.description)
                             .unwrap_or_default();
                         if let Ok(content) = fs::read_to_string(&skill_md) {
-                            catalog.doc_tokens.insert(key.clone(), estimate_text_tokens(&content));
+                            catalog
+                                .doc_tokens
+                                .insert(key.clone(), estimate_text_tokens(&content));
                         }
                         catalog.skills.insert(key, description.trim().to_string());
                         has_skills = true;
@@ -414,7 +416,9 @@ fn add_antigravity_plugins(plugins_dir: &Path, catalog: &mut PluginCatalog) {
                         .and_then(|meta| meta.description)
                         .unwrap_or_default();
                 if let Ok(content) = fs::read_to_string(&skill_md) {
-                    catalog.doc_tokens.insert(key.clone(), estimate_text_tokens(&content));
+                    catalog
+                        .doc_tokens
+                        .insert(key.clone(), estimate_text_tokens(&content));
                 }
                 catalog.skills.insert(key, description.trim().to_string());
                 has_skills = true;
@@ -518,6 +522,7 @@ fn content_text(content: &Value) -> String {
         .join("\n")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn event(
     context: &Context,
     app: &str,
@@ -609,8 +614,14 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
             fallback_id
         };
         let input_tokens = row.get("input_tokens").and_then(Value::as_u64).unwrap_or(0);
-        let output_tokens = row.get("output_tokens").and_then(Value::as_u64).unwrap_or(0);
-        let cache_read_tokens = row.get("cache_read_tokens").and_then(Value::as_u64).unwrap_or(0);
+        let output_tokens = row
+            .get("output_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let cache_read_tokens = row
+            .get("cache_read_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
 
         if step_type == "PLANNER_RESPONSE" {
             if let Some((skill, slash_at, id_suffix)) = context.pending_slash.take() {
@@ -1169,6 +1180,7 @@ pub struct SkillUsageSummary {
     output_token_buckets: Vec<u64>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_usage(
     summaries: &mut HashMap<(String, String), SkillUsageSummary>,
     name: String,
