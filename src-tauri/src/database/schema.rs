@@ -650,6 +650,36 @@ impl Database {
                         }
                         Self::set_user_version(conn, 25)?;
                     }
+                    25 => {
+                        log::info!("迁移数据库从 v25 到 v26（Skill 关联 Token 字段）");
+                        if Self::table_exists(conn, "skill_usage_events")? {
+                            Self::add_column_if_missing(
+                                conn,
+                                "skill_usage_events",
+                                "input_tokens",
+                                "INTEGER NOT NULL DEFAULT 0",
+                            )?;
+                            Self::add_column_if_missing(
+                                conn,
+                                "skill_usage_events",
+                                "output_tokens",
+                                "INTEGER NOT NULL DEFAULT 0",
+                            )?;
+                            Self::add_column_if_missing(
+                                conn,
+                                "skill_usage_events",
+                                "cache_read_tokens",
+                                "INTEGER NOT NULL DEFAULT 0",
+                            )?;
+                        }
+                        if Self::table_exists(conn, "skill_usage_sync")? {
+                            conn.execute_batch("DELETE FROM skill_usage_sync;")
+                                .map_err(|e| {
+                                    AppError::Database(format!("重置 Skill 使用同步游标失败: {e}"))
+                                })?;
+                        }
+                        Self::set_user_version(conn, 26)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -686,7 +716,10 @@ impl Database {
                 turn_id TEXT NOT NULL,
                 used_at INTEGER NOT NULL,
                 source TEXT NOT NULL,
-                evidence TEXT NOT NULL
+                evidence TEXT NOT NULL,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_skill_usage_time ON skill_usage_events(used_at);
             CREATE TABLE IF NOT EXISTS skill_usage_sync (

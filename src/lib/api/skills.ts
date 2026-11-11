@@ -140,6 +140,12 @@ export interface SkillUsageSummary {
   manualCount: number;
   agentCount: number;
   buckets: number[];
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  tokenBuckets?: number[];
+  inputTokenBuckets?: number[];
+  outputTokenBuckets?: number[];
 }
 
 export interface SkillUsageSnapshot {
@@ -160,6 +166,7 @@ export interface SkillUsageSnapshot {
     string,
     { app: AppId; marketplace: string; version: string; commands: number }[]
   >;
+  skillDocTokens?: Record<string, number>;
 }
 
 /** 存储位置迁移结果 */
