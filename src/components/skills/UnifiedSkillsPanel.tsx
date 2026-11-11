@@ -73,7 +73,7 @@ import type {
   SkillUsageSnapshot,
   SkillUsageSummary,
 } from "@/lib/api/skills";
-import { SkillUsageTrend } from "./SkillUsageTrend";
+import { SkillUsageTrend, formatTokens } from "./SkillUsageTrend";
 import { skillUsageColor, skillUsageTotals } from "@/lib/skillUsage";
 
 const IMPORT_SKILLS_APP_IDS = SKILLS_APP_IDS.filter((app) => app !== "pi");
@@ -178,6 +178,10 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [usageRange, setUsageRange] = useViewState<SkillUsageRange>(
     "skills.usageRange",
     "day",
+  );
+  const [usageMode, setUsageMode] = useViewState<"count" | "tokens">(
+    "skills.usageMode",
+    "count",
   );
   const usage = useSkillUsage();
   const pluginStates = usePluginStates();
@@ -413,22 +417,28 @@ const UnifiedSkillsPanel = React.forwardRef<
   );
 
   const sortedSkills = useMemo(() => {
-    const counts = new Map(
+    const metrics = new Map(
       [...usageRecords].map(([name, rows]) => [
         name,
-        rows.reduce((sum, row) => sum + row.count, 0),
+        usageMode === "tokens"
+          ? rows.reduce(
+              (sum, row) =>
+                sum + (row.inputTokens ?? 0) + (row.outputTokens ?? 0),
+              0,
+            )
+          : rows.reduce((sum, row) => sum + row.count, 0),
       ]),
     );
     return [...filteredSkills].sort((a, b) => {
       if (sortOrder === "usage") {
-        const countDifference =
-          (counts.get(b.directory.split(/[\\/]/).pop() ?? "") ?? 0) -
-          (counts.get(a.directory.split(/[\\/]/).pop() ?? "") ?? 0);
-        if (countDifference) return countDifference;
+        const metricDifference =
+          (metrics.get(b.directory.split(/[\\/]/).pop() ?? "") ?? 0) -
+          (metrics.get(a.directory.split(/[\\/]/).pop() ?? "") ?? 0);
+        if (metricDifference) return metricDifference;
       }
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
-  }, [filteredSkills, sortOrder, usageRecords]);
+  }, [filteredSkills, sortOrder, usageRecords, usageMode]);
 
   // Descriptions keyed by `plugin` and `plugin:skill`.
   const { pluginDescriptions, pluginSources } = useMemo(() => {
@@ -1101,9 +1111,46 @@ const UnifiedSkillsPanel = React.forwardRef<
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="name">{t("skills.usage.sortName")}</SelectItem>
-            <SelectItem value="usage">{t("skills.usage.sortUsage")}</SelectItem>
+            <SelectItem value="usage">
+              {usageMode === "tokens"
+                ? t("skills.usage.sortTokens", "Token 消耗")
+                : t("skills.usage.sortUsage")}
+            </SelectItem>
           </SelectContent>
         </Select>
+        <div
+          className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-lg border border-border/50 bg-muted/50 p-1"
+          role="group"
+          aria-label="模式切换"
+        >
+          <button
+            type="button"
+            aria-pressed={usageMode === "count"}
+            onClick={() => setUsageMode("count")}
+            className={cn(
+              "h-full rounded-md px-2.5 text-xs transition-colors",
+              usageMode === "count"
+                ? "bg-background font-medium text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t("skills.usage.modeCount", "频次")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={usageMode === "tokens"}
+            onClick={() => setUsageMode("tokens")}
+            className={cn(
+              "h-full rounded-md px-2.5 text-xs transition-colors flex items-center gap-1",
+              usageMode === "tokens"
+                ? "bg-purple-50 font-medium text-purple-700 ring-1 ring-inset ring-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/30"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span>⚡</span>
+            <span>{t("skills.usage.modeTokens", "Token")}</span>
+          </button>
+        </div>
       </div>
 
       {usageError && (
@@ -1188,6 +1235,12 @@ const UnifiedSkillsPanel = React.forwardRef<
                       (usageError
                         ? { completed: false, error: "unavailable" }
                         : usage.data?.status)
+                    }
+                    usageMode={usageMode}
+                    docTokens={
+                      usageSnapshot?.skillDocTokens?.[
+                        skill.directory.split(/[\\/]/).pop() ?? ""
+                      ]
                     }
                     onToggleApp={handleToggleApp}
                     onUninstall={() => handleUninstall(skill)}
@@ -1356,6 +1409,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                           range={usageRange}
                           hoveredApp={null}
                           status={usageSnapshot}
+                          mode={usageMode}
                         />
                       </ListItemRow>
                       {expanded && (
@@ -1387,6 +1441,10 @@ const UnifiedSkillsPanel = React.forwardRef<
                                 range={usageRange}
                                 hoveredApp={null}
                                 status={usageSnapshot}
+                                mode={usageMode}
+                                docTokens={
+                                  usageSnapshot?.skillDocTokens?.[name]
+                                }
                               />
                             </ListItemRow>
                           ))}
@@ -1468,6 +1526,8 @@ interface InstalledSkillListItemProps {
   usageRange: SkillUsageRange;
   usageBoundaries: number[];
   usageStatus?: Pick<SkillUsageSnapshot, "completed" | "error">;
+  usageMode?: "count" | "tokens";
+  docTokens?: number;
   hasUpdate?: boolean;
   isUpdating?: boolean;
   actionsDisabled?: boolean;
@@ -1485,6 +1545,8 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   usageRange,
   usageBoundaries,
   usageStatus,
+  usageMode = "count",
+  docTokens,
   hasUpdate,
   isUpdating,
   actionsDisabled,
@@ -1496,6 +1558,10 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
 }) => {
   const { t } = useTranslation();
   const [hoveredApp, setHoveredApp] = useState<AppId | null>(null);
+  const skillTotalTokens = usageRecords.reduce(
+    (sum, r) => sum + (r.inputTokens ?? 0) + (r.outputTokens ?? 0),
+    0,
+  );
   const usageByApp = Object.fromEntries(
     appIds.map((app) => {
       const record = usageRecords.find((record) => record.app === app);
@@ -1575,6 +1641,15 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
           <span className="text-xs text-muted-foreground/50 flex-shrink-0">
             {sourceLabel}
           </span>
+          {skillTotalTokens > 0 && (
+            <Badge
+              variant="outline"
+              className="shrink-0 text-[10px] px-1.5 py-0 h-4 border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400 font-normal"
+              title={`关联总 Token: ${skillTotalTokens.toLocaleString()}`}
+            >
+              ⚡ {formatTokens(skillTotalTokens)}
+            </Badge>
+          )}
           {hasUpdate && (
             <Badge
               variant="outline"
@@ -1600,6 +1675,8 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
         range={usageRange}
         hoveredApp={hoveredApp}
         status={usageStatus}
+        mode={usageMode}
+        docTokens={docTokens}
       />
 
       <AppToggleGroup

@@ -174,6 +174,10 @@ struct Context {
     session: String,
     turn: String,
     fork_at: Option<i64>,
+    #[serde(default)]
+    pending_slash: Option<(String, i64, String)>,
+    #[serde(default)]
+    last_tokens: Option<(u64, u64, u64)>,
 }
 
 #[derive(Debug)]
@@ -187,6 +191,9 @@ struct Event {
     at: i64,
     source: &'static str,
     evidence: &'static str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
 }
 
 fn timestamp(value: &Value) -> Option<i64> {
@@ -194,6 +201,24 @@ fn timestamp(value: &Value) -> Option<i64> {
         .as_str()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|at| at.timestamp())
+}
+
+/// Heuristic token estimator for markdown/plain text (CJK ~0.67 tokens/char, English ~0.25 tokens/char).
+pub fn estimate_text_tokens(text: &str) -> usize {
+    let mut cjk_count = 0;
+    let mut other_count = 0;
+    for c in text.chars() {
+        if ('\u{4e00}'..='\u{9fff}').contains(&c)
+            || ('\u{3040}'..='\u{30ff}').contains(&c)
+            || ('\u{ac00}'..='\u{d7af}').contains(&c)
+        {
+            cjk_count += 1;
+        } else {
+            other_count += 1;
+        }
+    }
+    let tokens = (cjk_count * 2 / 3) + (other_count / 4);
+    tokens.max(if text.trim().is_empty() { 0 } else { 1 })
 }
 
 /// Keeps the `plugin:` namespace so plugin Skills stay apart from same-named managed Skills.
@@ -240,6 +265,7 @@ struct PluginCatalog {
     sources: BTreeMap<String, BTreeSet<PluginSource>>,
     /// SessionStart hook log label to plugin; `None` when several plugins share the label.
     hook_plugins: HashMap<String, Option<String>>,
+    doc_tokens: BTreeMap<String, usize>,
 }
 
 /// Where a plugin is installed: the agent, the marketplace it came from, and what it ships.
@@ -306,6 +332,9 @@ fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
                             .ok()
                             .and_then(|meta| meta.description)
                             .unwrap_or_default();
+                        if let Ok(content) = fs::read_to_string(&skill_md) {
+                            catalog.doc_tokens.insert(key.clone(), estimate_text_tokens(&content));
+                        }
                         catalog.skills.insert(key, description.trim().to_string());
                         has_skills = true;
                     }
@@ -384,6 +413,9 @@ fn add_antigravity_plugins(plugins_dir: &Path, catalog: &mut PluginCatalog) {
                         .ok()
                         .and_then(|meta| meta.description)
                         .unwrap_or_default();
+                if let Ok(content) = fs::read_to_string(&skill_md) {
+                    catalog.doc_tokens.insert(key.clone(), estimate_text_tokens(&content));
+                }
                 catalog.skills.insert(key, description.trim().to_string());
                 has_skills = true;
             }
@@ -494,6 +526,9 @@ fn event(
     at: i64,
     manual: bool,
     evidence: &'static str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
 ) -> Event {
     let id = format!("{app}:{id}:{skill}");
     // One use per skill per user turn: repeated loads within a turn are chunked reads or reloads.
@@ -512,6 +547,9 @@ fn event(
         at,
         source: if manual { "manual" } else { "agent" },
         evidence,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
     }
 }
 
@@ -533,6 +571,14 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         {
             if let Some(turn) = payload["turn_id"].as_str() {
                 context.turn = turn.to_string();
+            }
+        }
+        if row["type"] == "event_msg" && payload["type"] == "token_count" {
+            if let Some(info) = payload.get("info").and_then(|i| i.get("total_token_usage")) {
+                let input = info["input_tokens"].as_u64().unwrap_or(0);
+                let output = info["output_tokens"].as_u64().unwrap_or(0);
+                let cached = info["cached_input_tokens"].as_u64().unwrap_or(0);
+                context.last_tokens = Some((input, output, cached));
             }
         }
     } else if let Some(session) = row["sessionId"].as_str() {
@@ -562,6 +608,27 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         } else {
             fallback_id
         };
+        let input_tokens = row.get("input_tokens").and_then(Value::as_u64).unwrap_or(0);
+        let output_tokens = row.get("output_tokens").and_then(Value::as_u64).unwrap_or(0);
+        let cache_read_tokens = row.get("cache_read_tokens").and_then(Value::as_u64).unwrap_or(0);
+
+        if step_type == "PLANNER_RESPONSE" {
+            if let Some((skill, slash_at, id_suffix)) = context.pending_slash.take() {
+                events.push(event(
+                    context,
+                    app,
+                    &id_suffix,
+                    skill,
+                    slash_at,
+                    true,
+                    "slash_command",
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                ));
+            }
+        }
+
         if step_type == "USER_INPUT" {
             context.turn = format!("step-{step_index}");
             if let Some(content) = row.get("content").and_then(Value::as_str) {
@@ -573,15 +640,20 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                             !c.is_alphanumeric() && c != '-' && c != '_'
                         });
                         if let Some(skill) = name(cmd) {
+                            let id_str = format!("{session_id}:user-{step_index}");
                             events.push(event(
                                 context,
                                 app,
-                                &format!("{session_id}:user-{step_index}"),
-                                skill,
+                                &id_str,
+                                skill.clone(),
                                 at,
                                 true,
                                 "slash_command",
+                                0,
+                                0,
+                                0,
                             ));
+                            context.pending_slash = Some((skill, at, id_str));
                         }
                     }
                 }
@@ -611,6 +683,9 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                             at,
                             false,
                             "skill_file_read",
+                            input_tokens,
+                            output_tokens,
+                            cache_read_tokens,
                         ));
                     }
                 } else if short_name == "run_command" {
@@ -624,6 +699,9 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                                 at,
                                 false,
                                 "skill_file_read",
+                                input_tokens,
+                                output_tokens,
+                                cache_read_tokens,
                             ));
                         }
                     }
@@ -636,6 +714,10 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         let message = &row["message"];
         let content = &message["content"];
         let role = message["role"].as_str().or_else(|| row["type"].as_str());
+        let usage = &message["usage"];
+        let input_tokens = usage["input_tokens"].as_u64().unwrap_or(0);
+        let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
+        let cache_read_tokens = usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
         if role == Some("user") {
             let text = content_text(content);
             if let Some(prompt) = row["promptId"].as_str() {
@@ -650,18 +732,37 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                     Regex::new(r"<command-name>/([^<\s]+)</command-name>").unwrap()
                 });
                 if let Some(skill) = re.captures(&text).and_then(|c| name(&c[1])) {
+                    let id_str = row["uuid"].as_str().unwrap_or(fallback_id).to_string();
                     events.push(event(
                         context,
                         app,
-                        row["uuid"].as_str().unwrap_or(fallback_id),
-                        skill,
+                        &id_str,
+                        skill.clone(),
                         at,
                         true,
                         "slash_command",
+                        0,
+                        0,
+                        0,
                     ));
+                    context.pending_slash = Some((skill, at, id_str));
                 }
             }
         } else if role == Some("assistant") {
+            if let Some((skill, slash_at, id_suffix)) = context.pending_slash.take() {
+                events.push(event(
+                    context,
+                    app,
+                    &id_suffix,
+                    skill,
+                    slash_at,
+                    true,
+                    "slash_command",
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                ));
+            }
             for item in content.as_array().into_iter().flatten() {
                 if item["type"] == "tool_use" && item["name"] == "Skill" {
                     if let Some(skill) = item["input"]["skill"].as_str().and_then(name) {
@@ -673,12 +774,16 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                             at,
                             false,
                             "skill_tool",
+                            input_tokens,
+                            output_tokens,
+                            cache_read_tokens,
                         ));
                     }
                 }
             }
         }
     } else if row["type"] == "event_msg" && payload["type"] == "item_completed" {
+        let (codex_input, codex_output, codex_cache) = context.last_tokens.unwrap_or((0, 0, 0));
         let item = &payload["item"];
         if item["type"] == "CommandExecution"
             && item["exit_code"].as_i64() == Some(0)
@@ -704,6 +809,9 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                     at,
                     false,
                     "skill_file_read",
+                    codex_input,
+                    codex_output,
+                    codex_cache,
                 ));
             }
         }
@@ -711,6 +819,7 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         && payload["type"] == "message"
         && payload["role"] == "user"
     {
+        let (codex_input, codex_output, codex_cache) = context.last_tokens.unwrap_or((0, 0, 0));
         let text = content_text(&payload["content"]);
         if text.trim_start().starts_with("<skill>") {
             static SKILL: OnceLock<Regex> = OnceLock::new();
@@ -729,6 +838,9 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                         at,
                         true,
                         "skill_injection",
+                        codex_input,
+                        codex_output,
+                        codex_cache,
                     ));
                 }
             }
@@ -769,6 +881,9 @@ fn session_hook_event(
         at,
         source: "agent",
         evidence: SESSION_HOOK,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
     })
 }
 
@@ -987,18 +1102,35 @@ fn sync_file(
         }
         offset += read as u64;
     }
+    if let Some((skill, slash_at, id_suffix)) = context.pending_slash.take() {
+        events.push(event(
+            &context,
+            app,
+            &id_suffix,
+            skill,
+            slash_at,
+            true,
+            "slash_command",
+            0,
+            0,
+            0,
+        ));
+    }
     let tail = fingerprint(reader.get_mut(), offset)?;
     let serialized = serde_json::to_string(&context).map_err(|e| e.to_string())?;
     let mut conn = db.conn.lock().map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     for event in events {
-        tx.execute("INSERT INTO skill_usage_events(event_id,dedup_key,skill_name,app,session_id,turn_id,used_at,source,evidence)
-            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+        tx.execute("INSERT INTO skill_usage_events(event_id,dedup_key,skill_name,app,session_id,turn_id,used_at,source,evidence,input_tokens,output_tokens,cache_read_tokens)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
             ON CONFLICT DO UPDATE SET
-                used_at=MIN(used_at,excluded.used_at),
-                source=CASE WHEN excluded.source='manual' THEN 'manual' ELSE source END,
-                evidence=CASE WHEN excluded.source='manual' THEN excluded.evidence ELSE evidence END",
-            params![event.id,event.dedup,event.skill,event.app,event.session,event.turn,event.at,event.source,event.evidence])
+                used_at=MIN(skill_usage_events.used_at,excluded.used_at),
+                source=CASE WHEN excluded.source='manual' THEN 'manual' ELSE skill_usage_events.source END,
+                evidence=CASE WHEN excluded.source='manual' THEN excluded.evidence ELSE skill_usage_events.evidence END,
+                input_tokens=MAX(skill_usage_events.input_tokens, excluded.input_tokens),
+                output_tokens=MAX(skill_usage_events.output_tokens, excluded.output_tokens),
+                cache_read_tokens=MAX(skill_usage_events.cache_read_tokens, excluded.cache_read_tokens)",
+            params![event.id,event.dedup,event.skill,event.app,event.session,event.turn,event.at,event.source,event.evidence,event.input_tokens,event.output_tokens,event.cache_read_tokens])
             .map_err(|e| e.to_string())?;
     }
     tx.execute(
@@ -1029,6 +1161,12 @@ pub struct SkillUsageSummary {
     buckets: Vec<u32>,
     #[serde(skip)]
     session_ids: BTreeSet<String>,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
+    token_buckets: Vec<u64>,
+    input_token_buckets: Vec<u64>,
+    output_token_buckets: Vec<u64>,
 }
 
 fn add_usage(
@@ -1039,6 +1177,9 @@ fn add_usage(
     at: i64,
     manual: bool,
     boundaries: &[i64],
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
 ) {
     let summary = summaries
         .entry((name.clone(), app.clone()))
@@ -1052,18 +1193,31 @@ fn add_usage(
             agent_count: 0,
             buckets: vec![0; boundaries.len() - 1],
             session_ids: BTreeSet::new(),
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            token_buckets: vec![0; boundaries.len() - 1],
+            input_token_buckets: vec![0; boundaries.len() - 1],
+            output_token_buckets: vec![0; boundaries.len() - 1],
         });
     summary.count += 1;
     summary.last_used = summary.last_used.max(at);
     summary.session_ids.insert(session.to_string());
     summary.sessions = summary.session_ids.len();
+    summary.input_tokens += input_tokens;
+    summary.output_tokens += output_tokens;
+    summary.cache_read_tokens += cache_read_tokens;
     if manual {
         summary.manual_count += 1;
     } else {
         summary.agent_count += 1;
     }
+    let total_tokens = input_tokens + output_tokens;
     if let Some(bucket) = boundaries.windows(2).position(|p| at >= p[0] && at < p[1]) {
         summary.buckets[bucket] += 1;
+        summary.token_buckets[bucket] += total_tokens;
+        summary.input_token_buckets[bucket] += input_tokens;
+        summary.output_token_buckets[bucket] += output_tokens;
     }
 }
 
@@ -1079,6 +1233,7 @@ pub struct SkillUsageSnapshot {
     plugin_skills: BTreeMap<String, String>,
     plugin_descriptions: BTreeMap<String, String>,
     plugin_sources: BTreeMap<String, BTreeSet<PluginSource>>,
+    skill_doc_tokens: BTreeMap<String, usize>,
 }
 
 pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot, String> {
@@ -1129,7 +1284,8 @@ fn usage_with_catalog(
     // Check predecessors outside the selected range too, so midnight never splits one load.
     let mut statement = conn
         .prepare(
-            "SELECT e.skill_name, e.app, e.session_id, e.used_at, e.source, e.evidence
+            "SELECT e.skill_name, e.app, e.session_id, e.used_at, e.source, e.evidence,
+                    e.input_tokens, e.output_tokens, e.cache_read_tokens
              FROM skill_usage_events e
              WHERE e.used_at>=?1 AND e.used_at<?2
                AND (e.evidence<>?3 OR NOT EXISTS (
@@ -1156,6 +1312,9 @@ fn usage_with_catalog(
                     row.get::<_, i64>(3)?,
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
+                    row.get::<_, u64>(6).unwrap_or(0),
+                    row.get::<_, u64>(7).unwrap_or(0),
+                    row.get::<_, u64>(8).unwrap_or(0),
                 ))
             },
         )
@@ -1163,7 +1322,17 @@ fn usage_with_catalog(
     let mut summaries = HashMap::new();
     let mut plugin_hook_summaries = HashMap::new();
     for row in rows {
-        let (name, app, session, at, source, evidence) = row.map_err(|e| e.to_string())?;
+        let (
+            name,
+            app,
+            session,
+            at,
+            source,
+            evidence,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+        ) = row.map_err(|e| e.to_string())?;
         let manual = source == "manual";
         let (summaries, name) = if evidence == SESSION_HOOK {
             if !catalog.plugins.contains_key(&name) {
@@ -1176,7 +1345,31 @@ fn usage_with_catalog(
             };
             (&mut summaries, skill)
         };
-        add_usage(summaries, name, app, &session, at, manual, boundaries);
+        add_usage(
+            summaries,
+            name,
+            app,
+            &session,
+            at,
+            manual,
+            boundaries,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+        );
+    }
+    let mut skill_doc_tokens = catalog.doc_tokens;
+    for skill in installed.values() {
+        let skill_md = Path::new(&skill.directory).join("SKILL.md");
+        if let Ok(content) = fs::read_to_string(&skill_md) {
+            if let Some(skill_name) = Path::new(&skill.directory)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(name)
+            {
+                skill_doc_tokens.insert(skill_name, estimate_text_tokens(&content));
+            }
+        }
     }
     Ok(SkillUsageSnapshot {
         status: scan_state()
@@ -1189,6 +1382,7 @@ fn usage_with_catalog(
         plugin_skills: catalog.skills,
         plugin_descriptions: catalog.plugins,
         plugin_sources: catalog.sources,
+        skill_doc_tokens,
     })
 }
 
@@ -1425,7 +1619,7 @@ mod tests {
     fn migration_rescans_usage_for_plugin_namespaces() {
         let db = Database::memory().unwrap();
         let conn = db.conn.lock().unwrap();
-        conn.execute_batch("INSERT INTO skill_usage_events VALUES
+        conn.execute_batch("INSERT INTO skill_usage_events(event_id,dedup_key,skill_name,app,session_id,turn_id,used_at,source,evidence) VALUES
                 ('codex:x:ponytail','codex:s:t:ponytail','ponytail','codex','s','t',30,'agent','skill_file_read');
             INSERT INTO skill_usage_sync VALUES ('f',1,1,1,'x','{}');
             PRAGMA user_version=20;").unwrap();
@@ -1679,7 +1873,7 @@ name: x
     fn migration_rescans_for_hook_records_and_keeps_existing_events() {
         let db = Database::memory().unwrap();
         let conn = db.conn.lock().unwrap();
-        conn.execute_batch("INSERT INTO skill_usage_events VALUES
+        conn.execute_batch("INSERT INTO skill_usage_events(event_id,dedup_key,skill_name,app,session_id,turn_id,used_at,source,evidence) VALUES
                 ('codex:x:ponytail','codex:s:t:ponytail','ponytail','codex','s','t',30,'agent','skill_file_read');
             INSERT INTO skill_usage_sync VALUES ('f',1,1,1,'x','{}');
             PRAGMA user_version=23;").unwrap();

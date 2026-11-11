@@ -148,4 +148,46 @@ describe("SkillUsageTrend", () => {
       expect(screen.queryByRole("tooltip")).not.toBeInTheDocument(),
     );
   });
+
+  it("renders token consumption mode and formats tokens correctly", async () => {
+    const start = new Date(2026, 9, 17).getTime() / 1000;
+    render(
+      <SkillUsageTrend
+        records={[
+          {
+            skillName: "impeccable",
+            app: "claude",
+            count: 5,
+            sessions: 2,
+            lastUsed: start,
+            manualCount: 2,
+            agentCount: 3,
+            buckets: [5, 0],
+            inputTokens: 120000,
+            outputTokens: 25000,
+            cacheReadTokens: 100000,
+            tokenBuckets: [145000, 0],
+          },
+        ]}
+        range="day"
+        boundaries={[start, start + 7200, start + 14400]}
+        hoveredApp={null}
+        status={{ completed: true, error: null }}
+        mode="tokens"
+        docTokens={1450}
+      />,
+    );
+
+    const trend = screen.getByTestId("skill-usage-trend");
+    expect(trend).toHaveTextContent("⚡ 145.0k");
+
+    const user = userEvent.setup();
+    const buckets = within(trend).getAllByRole("button");
+    await user.hover(buckets[0]);
+    const details = await screen.findByRole("tooltip");
+    expect(details).toHaveTextContent("145.0k");
+    expect(details).toHaveTextContent("25.0k");
+    expect(details).toHaveTextContent("120.0k");
+    expect(details).toHaveTextContent("~1.4k tokens");
+  });
 });
