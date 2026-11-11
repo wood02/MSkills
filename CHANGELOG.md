@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.0.7 - 2026-11-11
+
+- Skill 使用统计支持 Token 维度消耗与趋势展示：
+  - 后端数据库升级至 Schema v26，在 Skill 使用事件中引入 `input_tokens`、`output_tokens` 与 `cache_read_tokens`，自动重置同步游标以重新解析带 Token 的历史会话记录。
+  - 支持解析各客户端（Claude、Codex、Hermes、Gemini、Antigravity 等）的 Token 使用数据，并自动估算 Skill 文档基准 Token 消耗。
+  - 前端使用统计支持“频次”与“Token”双模式切换，趋势图柱状分段按比例精细展示 Output 与 Input Token 消耗，并支持列表项 Token 消耗排序与快捷徽章展示。
+
 ## v1.0.6 - 2026-11-10
 
 - 支持 Skill 目录文件树浏览与多文件预览/编辑：
