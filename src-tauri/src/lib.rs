@@ -1414,6 +1414,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::get_rtk_status,
+            commands::get_rtk_stats,
+            commands::get_rtk_agents,
+            commands::toggle_rtk_agent,
             commands::get_providers,
             commands::get_current_provider,
             commands::add_provider,
@@ -1508,8 +1512,11 @@ pub fn run() {
             commands::upsert_prompt,
             commands::delete_prompt,
             commands::enable_prompt,
+            commands::set_prompt_enabled,
+            commands::reorder_prompts,
             commands::import_prompt_from_file,
             commands::get_current_prompt_file_content,
+            commands::save_current_prompt_file_content,
             commands::get_pi_prompt_file,
             commands::replace_pi_prompt_file,
             commands::delete_pi_prompt_file,

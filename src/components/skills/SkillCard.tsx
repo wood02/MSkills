@@ -38,6 +38,7 @@ import {
   type BestSkillsMetric,
   type BestSkillsMetricIcon,
 } from "@/lib/bestSkills";
+import { RepoAvatar } from "./RepoAvatar";
 
 type SkillCardSkill = DiscoverableSkill & { installed: boolean };
 
@@ -235,13 +236,27 @@ export function SkillCard({
     <Card className="glass-card flex flex-col h-full transition-all duration-300 hover:shadow-lg group relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-3">
           {ranking && <RankMedal rank={ranking.rank} />}
+          <RepoAvatar owner={skill.repoOwner} name={skill.name} />
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-base font-semibold truncate">
-              {skill.name}
-            </CardTitle>
-            <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <CardTitle
+                className="text-base font-semibold truncate"
+                title={skill.name}
+              >
+                {skill.name}
+              </CardTitle>
+              {skill.installed && (
+                <Badge
+                  variant="default"
+                  className="shrink-0 text-xs px-2 py-0.5 bg-green-600/90 hover:bg-green-600 dark:bg-green-700/90 dark:hover:bg-green-700 text-white border-0"
+                >
+                  {t("skills.installed")}
+                </Badge>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
               {showDirectory && (
                 <CardDescription className="text-xs truncate">
                   {skill.directory}
@@ -266,7 +281,7 @@ export function SkillCard({
               {skill.repoOwner && skill.repoName && (
                 <Badge
                   variant="outline"
-                  className="min-w-[4.5rem] text-[10px] px-1.5 py-0 h-4 border-border-default"
+                  className="max-w-[13rem] text-[10px] px-1.5 py-0 h-4 border-border-default"
                 >
                   <span className="truncate">
                     {skill.repoOwner}/{skill.repoName}
@@ -285,14 +300,6 @@ export function SkillCard({
               {ranking && <RankingMetric metric={ranking.metric} />}
             </div>
           </div>
-          {skill.installed && (
-            <Badge
-              variant="default"
-              className="shrink-0 bg-green-600/90 hover:bg-green-600 dark:bg-green-700/90 dark:hover:bg-green-700 text-white border-0"
-            >
-              {t("skills.installed")}
-            </Badge>
-          )}
         </div>
       </CardHeader>
       {skill.description ? (

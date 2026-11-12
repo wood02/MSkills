@@ -416,14 +416,15 @@ impl ProfileService {
                 Self::apply_skill_slot(state, app, target_ids, &mut warnings)?;
             }
 
-            // 5. Prompt（None = 不动；已激活则幂等跳过，避免无谓的文件写与备份）
+            // 5. Prompt（None = 不动；仅当目标项为唯一已激活项时幂等跳过，避免无谓的文件写与备份）
             if let Some(Some(target_prompt)) = payload.prompts.get(app) {
                 let prompts = state.db.get_prompts(app_str)?;
+                let active_count = prompts.values().filter(|p| p.enabled).count();
                 match prompts.get(target_prompt) {
                     None => warnings.push(format!(
                         "[{app_str}] prompt '{target_prompt}' no longer exists, skipped"
                     )),
-                    Some(p) if p.enabled => {}
+                    Some(p) if p.enabled && active_count == 1 => {}
                     Some(_) => {
                         if let Err(e) =
                             PromptService::enable_prompt(state, app.clone(), target_prompt)

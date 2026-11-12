@@ -789,6 +789,27 @@ export const iconMetadata: Record<string, IconMetadata> = {
     keywords: ["xycai", "xyc", "aggregator", "relay", "gateway", "token"],
     defaultColor: "#1E88E5",
   },
+  cursor: {
+    name: "cursor",
+    displayName: "Cursor",
+    category: "ai-provider",
+    keywords: ["cursor", "cursor-cli", "agent"],
+    defaultColor: "currentColor",
+  },
+  factory: {
+    name: "factory",
+    displayName: "Droid",
+    category: "ai-provider",
+    keywords: ["factory", "droid", "agent"],
+    defaultColor: "currentColor",
+  },
+  cline: {
+    name: "cline",
+    displayName: "Cline",
+    category: "ai-provider",
+    keywords: ["cline", "agent"],
+    defaultColor: "currentColor",
+  },
 };
 
 export function getIconMetadata(name: string): IconMetadata | undefined {

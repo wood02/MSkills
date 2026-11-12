@@ -1,9 +1,21 @@
 import React from "react";
+import type {
+  DraggableAttributes,
+  DraggableSyntheticListeners,
+} from "@dnd-kit/core";
 import { useTranslation } from "react-i18next";
-import { Edit3, Trash2 } from "lucide-react";
+import { Edit3, GripVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { Prompt } from "@/lib/api";
 import PromptToggle from "./PromptToggle";
+
+export interface PromptDragHandleProps {
+  attributes: DraggableAttributes;
+  listeners?: DraggableSyntheticListeners;
+  isDragging?: boolean;
+  disabled?: boolean;
+}
 
 interface PromptListItemProps {
   id: string;
@@ -11,6 +23,8 @@ interface PromptListItemProps {
   onToggle: (id: string, enabled: boolean) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  orderIndex?: number;
+  dragHandleProps?: PromptDragHandleProps;
   disabled?: boolean;
   deleteDisabled?: boolean;
   deleteTitle?: string;
@@ -22,6 +36,8 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
   onToggle,
   onEdit,
   onDelete,
+  orderIndex,
+  dragHandleProps,
   disabled = false,
   deleteDisabled = false,
   deleteTitle,
@@ -31,8 +47,38 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
   const enabled = prompt.enabled === true;
 
   return (
-    <div className="group relative h-16 rounded-xl border border-border-default bg-muted/50 p-4 transition-all duration-300 hover:bg-muted hover:border-border-default/80 hover:shadow-sm">
-      <div className="flex items-center gap-4 h-full">
+    <div
+      className={cn(
+        "group relative h-16 rounded-xl border border-border-default bg-muted/50 p-4 transition-all duration-300 hover:bg-muted hover:border-border-default/80 hover:shadow-sm",
+        dragHandleProps?.isDragging &&
+          "relative z-10 border-primary/40 bg-muted shadow-md",
+      )}
+    >
+      <div className="flex items-center gap-3 h-full">
+        {dragHandleProps && (
+          <button
+            type="button"
+            disabled={dragHandleProps.disabled}
+            aria-label={t("prompts.dragHandle")}
+            title={
+              dragHandleProps.disabled
+                ? t("prompts.dragHandleDisabled")
+                : t("prompts.dragHandle")
+            }
+            className={cn(
+              "-ml-1.5 flex-shrink-0 rounded p-1 text-muted-foreground/50 transition-colors",
+              dragHandleProps.disabled
+                ? "cursor-not-allowed opacity-35"
+                : "cursor-grab hover:text-muted-foreground active:cursor-grabbing",
+              dragHandleProps.isDragging && "cursor-grabbing text-foreground",
+            )}
+            {...(dragHandleProps.disabled ? {} : dragHandleProps.attributes)}
+            {...(dragHandleProps.disabled ? {} : dragHandleProps.listeners)}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+
         {/* Toggle 开关 */}
         <div className="flex-shrink-0">
           <PromptToggle
@@ -43,7 +89,19 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
         </div>
 
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-foreground mb-1">{prompt.name}</h3>
+          <div className="flex items-center gap-2 mb-1 min-w-0">
+            <h3 className="font-medium text-foreground truncate">
+              {prompt.name}
+            </h3>
+            {orderIndex !== undefined && (
+              <span
+                className="inline-flex shrink-0 items-center rounded bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-mono font-medium text-emerald-600 dark:text-emerald-400"
+                title={t("prompts.concatOrderTitle", { order: orderIndex })}
+              >
+                #{orderIndex}
+              </span>
+            )}
+          </div>
           {prompt.description && (
             <p className="text-sm text-muted-foreground truncate">
               {prompt.description}
@@ -51,7 +109,7 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0">
           <Button
             type="button"
             variant="ghost"

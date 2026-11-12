@@ -53,6 +53,27 @@ pub async fn enable_prompt(
 }
 
 #[tauri::command]
+pub async fn set_prompt_enabled(
+    app: String,
+    id: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    PromptService::set_prompt_enabled(&state, app_type, &id, enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn reorder_prompts(
+    app: String,
+    ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    PromptService::reorder_prompts(&state, app_type, &ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn import_prompt_from_file(
     app: String,
     state: State<'_, AppState>,
@@ -65,6 +86,16 @@ pub async fn import_prompt_from_file(
 pub async fn get_current_prompt_file_content(app: String) -> Result<Option<String>, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     PromptService::get_current_file_content(app_type).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_current_prompt_file_content(
+    app: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    PromptService::save_current_file_content(&state, app_type, &content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

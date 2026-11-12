@@ -23,6 +23,7 @@ interface AppSwitcherProps {
   activeApp: AppId;
   onSwitch: (app: AppId) => void;
   visibleApps?: VisibleApps;
+  suppressActiveHighlight?: boolean;
 }
 
 const STORAGE_KEY = "mskills-last-app";
@@ -97,13 +98,14 @@ export function AppSwitcher({
   activeApp,
   onSwitch,
   visibleApps,
+  suppressActiveHighlight = false,
 }: AppSwitcherProps) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const handleSwitch = (app: AppId) => {
-    if (app === activeApp) return;
+    if (!suppressActiveHighlight && app === activeApp) return;
     localStorage.setItem(STORAGE_KEY, app);
     onSwitch(app);
   };
@@ -168,7 +170,7 @@ export function AppSwitcher({
       style={{ WebkitAppRegion: "no-drag" } as any}
     >
       {visibleList.map((app) => {
-        const isActive = activeApp === app;
+        const isActive = !suppressActiveHighlight && activeApp === app;
         return (
           <button
             key={app}

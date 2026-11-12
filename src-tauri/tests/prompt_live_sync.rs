@@ -21,6 +21,7 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
             content: "original".into(),
             description: Some("Keep my metadata".into()),
             enabled: true,
+            sort_order: None,
             created_at: Some(1),
             updated_at: Some(1),
         };
@@ -34,9 +35,10 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
         let path = home.join(relative_path);
 
         for content in ["externally edited\n", "another edit\n"] {
+            let expected = content.trim_end_matches('\n');
             fs::write(&path, content).unwrap();
             let prompts = PromptService::get_prompts(&state, app.clone()).unwrap();
-            assert_eq!(prompts["active"].content, content);
+            assert_eq!(prompts["active"].content, expected);
             assert_eq!(prompts["active"].name, active.name);
             assert_eq!(prompts["active"].description, active.description);
             assert_eq!(prompts["active"].created_at, active.created_at);
@@ -45,7 +47,7 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
             assert_eq!(fs::read_to_string(&path).unwrap(), content);
             assert_eq!(
                 state.db.get_prompts(app.as_str()).unwrap()["active"].content,
-                content
+                expected
             );
         }
 

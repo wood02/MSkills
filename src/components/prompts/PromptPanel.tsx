@@ -1,13 +1,45 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Eye } from "lucide-react";
 import { type AppId } from "@/lib/api";
+import { useDarkMode } from "@/hooks/useDarkMode";
 import { usePromptActions } from "@/hooks/usePromptActions";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useViewState } from "@/hooks/useViewState";
+import MarkdownEditor from "@/components/MarkdownEditor";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import PiPromptPanel, { type PromptPrimaryAction } from "./PiPromptPanel";
 import PromptFormPanel from "./PromptFormPanel";
 import { PromptLibrary } from "./PromptLibrary";
 import { ConfirmDialog } from "../ConfirmDialog";
+
+const PROMPT_FILENAME_MAP: Record<AppId, string> = {
+  claude: "CLAUDE.md",
+  "claude-desktop": "CLAUDE.md",
+  codex: "AGENTS.md",
+  gemini: "GEMINI.md",
+  antigravity: "GEMINI.md",
+  grokbuild: "AGENTS.md",
+  opencode: "AGENTS.md",
+  openclaw: "AGENTS.md",
+  hermes: "SOUL.md",
+  pi: "AGENTS.md",
+  mcode: "AGENTS.md",
+  dsh: "AGENTS.md",
+};
+
+const PROMPT_BYTE_LIMIT_MAP: Partial<Record<AppId, number>> = {
+  antigravity: 24_000,
+  mcode: 32 * 1024,
+};
 
 interface PromptPanelProps {
   open: boolean;
@@ -39,8 +71,12 @@ const StandardPromptPanel = React.forwardRef<
     ref,
   ) => {
     const { t } = useTranslation();
+    const isDarkMode = useDarkMode();
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [draftFileContent, setDraftFileContent] = useState("");
+    const [savingFile, setSavingFile] = useState(false);
     const [searchQuery, setSearchQuery] = useViewState("prompts.search", "");
     const [confirmDialog, setConfirmDialog] = useState<{
       isOpen: boolean;
@@ -60,18 +96,27 @@ const StandardPromptPanel = React.forwardRef<
     const {
       prompts,
       loading,
+      currentFileContent,
       reload,
       savePrompt,
       deletePrompt,
       toggleEnabled,
+      reorderPrompts,
+      saveCurrentFileContent,
     } = usePromptActions(appId);
     const reloadRef = React.useRef(reload);
     reloadRef.current = reload;
 
-    const dialogOpen = confirmDialog !== null;
+    const dialogOpen = confirmDialog !== null || isPreviewOpen;
     const interactionBlocked =
-      loading || reloadPending || writePending || isFormOpen || dialogOpen;
-    const navigationBlocked = writePending || isFormOpen || dialogOpen;
+      loading ||
+      reloadPending ||
+      writePending ||
+      savingFile ||
+      isFormOpen ||
+      dialogOpen;
+    const navigationBlocked =
+      writePending || savingFile || isFormOpen || dialogOpen;
 
     useEffect(() => {
       onInteractionBlockedChange?.(interactionBlocked);
@@ -144,6 +189,8 @@ const StandardPromptPanel = React.forwardRef<
       setSearchQuery("");
       overlayOpenRef.current = false;
       setIsFormOpen(false);
+      setIsPreviewOpen(false);
+      setDraftFileContent("");
       setEditingId(null);
       setConfirmDialog(null);
       if (externalReloadQueuedRef.current) {
@@ -232,6 +279,20 @@ const StandardPromptPanel = React.forwardRef<
       }
     };
 
+    const handleReorder = async (ids: string[]) => {
+      if (!reorderPrompts || !beginWrite()) return;
+      try {
+        const refreshed = await reorderPrompts(ids);
+        if (refreshed === false) {
+          externalReloadQueuedRef.current = true;
+        }
+      } catch {
+        // Error handled by hook
+      } finally {
+        endWrite();
+      }
+    };
+
     const handleSave = async (
       id: string,
       prompt: Parameters<typeof savePrompt>[1],
@@ -261,8 +322,66 @@ const StandardPromptPanel = React.forwardRef<
       }
     };
 
+    const openPreviewEditor = () => {
+      if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
+        return;
+      }
+      overlayOpenRef.current = true;
+      setDraftFileContent(currentFileContent ?? "");
+      setIsPreviewOpen(true);
+    };
+
+    const handlePreviewOpenChange = (nextOpen: boolean) => {
+      if (!nextOpen && savingFile) return;
+      overlayOpenRef.current = nextOpen;
+      setIsPreviewOpen(nextOpen);
+      if (!nextOpen && externalReloadQueuedRef.current) {
+        void runExternalReload();
+      }
+    };
+
+    const handleSaveLiveFile = async () => {
+      if (
+        !saveCurrentFileContent ||
+        overByteLimit ||
+        !hasUnsavedFileChanges ||
+        !beginWrite()
+      ) {
+        return;
+      }
+      setSavingFile(true);
+      try {
+        const refreshed = await saveCurrentFileContent(draftFileContent);
+        if (refreshed === false) {
+          externalReloadQueuedRef.current = true;
+        }
+        overlayOpenRef.current = false;
+        setIsPreviewOpen(false);
+      } catch {
+        // Error handled by hook
+      } finally {
+        setSavingFile(false);
+        endWrite();
+      }
+    };
+
     const promptEntries = Object.entries(prompts);
-    const enabledPrompt = promptEntries.find(([, prompt]) => prompt.enabled);
+    const enabledPrompts = promptEntries.filter(([, prompt]) => prompt.enabled);
+    const statusText =
+      enabledPrompts.length === 0
+        ? t("prompts.noneEnabled")
+        : enabledPrompts.length === 1
+          ? t("prompts.enabledName", { name: enabledPrompts[0][1].name })
+          : t("prompts.enabledMultiple", {
+              count: enabledPrompts.length,
+              names: enabledPrompts.map(([, p]) => p.name).join(" + "),
+            });
+    const draftByteCount = new TextEncoder().encode(draftFileContent).length;
+    const byteLimit = PROMPT_BYTE_LIMIT_MAP[appId];
+    const overByteLimit = Boolean(byteLimit && draftByteCount > byteLimit);
+    const hasUnsavedFileChanges =
+      draftFileContent !== (currentFileContent ?? "");
+    const targetFilename = PROMPT_FILENAME_MAP[appId];
 
     return (
       <div className="flex flex-col flex-1 min-h-0 px-6">
@@ -270,17 +389,87 @@ const StandardPromptPanel = React.forwardRef<
           prompts={prompts}
           loading={loading}
           searchQuery={searchQuery}
-          statusText={
-            enabledPrompt
-              ? t("prompts.enabledName", { name: enabledPrompt[1].name })
-              : t("prompts.noneEnabled")
+          statusText={statusText}
+          headerAction={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={interactionBlocked}
+              onClick={openPreviewEditor}
+              className="h-7 gap-1.5 text-xs"
+            >
+              <Eye size={13} />
+              {t("prompts.viewEditFile")}
+            </Button>
           }
           disabled={interactionBlocked}
           onSearchQueryChange={setSearchQuery}
           onToggle={handleToggle}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onReorder={
+            typeof reorderPrompts === "function" ? handleReorder : undefined
+          }
+          showOrderBadges={enabledPrompts.length > 0}
         />
+
+        <Dialog open={isPreviewOpen} onOpenChange={handlePreviewOpenChange}>
+          <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+            <DialogHeader className="px-6 pt-6 pb-3 border-b border-border-default">
+              <DialogTitle>
+                {t("prompts.currentFile", { filename: targetFilename })}
+              </DialogTitle>
+              <DialogDescription
+                className={
+                  overByteLimit ? "text-destructive font-medium" : undefined
+                }
+              >
+                {byteLimit
+                  ? `${draftByteCount.toLocaleString()} / ${byteLimit.toLocaleString()} bytes${overByteLimit ? ` · ${t("prompts.fileOverLimit")}` : ""}`
+                  : `${draftByteCount.toLocaleString()} bytes`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+              <MarkdownEditor
+                ariaLabel={t("prompts.currentFile", {
+                  filename: targetFilename,
+                })}
+                value={draftFileContent}
+                onChange={setDraftFileContent}
+                placeholder={t("prompts.contentPlaceholder", {
+                  filename: targetFilename,
+                })}
+                darkMode={isDarkMode}
+                readOnly={savingFile}
+                minHeight="320px"
+                maxHeight="52vh"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handlePreviewOpenChange(false)}
+                disabled={savingFile}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveLiveFile}
+                disabled={
+                  !saveCurrentFileContent ||
+                  !hasUnsavedFileChanges ||
+                  overByteLimit ||
+                  savingFile
+                }
+              >
+                {savingFile ? t("common.saving") : t("common.save")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {isFormOpen && (
           <PromptFormPanel

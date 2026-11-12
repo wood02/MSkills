@@ -7,7 +7,7 @@ import {
   waitFor,
   fireEvent,
 } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import userEvent from "@testing-library/user-event";
 import { resetProviderState, getSettings, setSettings } from "../msw/state";
@@ -195,6 +195,24 @@ vi.mock("@/components/mcp/McpPanel", () => ({
     ),
 }));
 
+vi.mock("@/components/prompts/PromptPanel", async () => {
+  const React = await import("react");
+  const MockPromptPanel = React.forwardRef((_props: any, ref) => {
+    React.useImperativeHandle(ref, () => ({
+      openCreate: vi.fn(),
+      openImport: vi.fn(),
+      openEditFile: vi.fn(),
+    }));
+    return <div data-testid="prompt-panel" />;
+  });
+  MockPromptPanel.displayName = "MockPromptPanel";
+  return { default: MockPromptPanel };
+});
+
+vi.mock("@/components/prompts/rtk/RtkDashboard", () => ({
+  RtkDashboard: () => <div data-testid="rtk-dashboard" />,
+}));
+
 const renderApp = (AppComponent: ComponentType) => {
   const client = new QueryClient();
   const result = render(
@@ -208,6 +226,12 @@ const renderApp = (AppComponent: ComponentType) => {
 };
 
 describe("App integration with MSW", () => {
+  let App: ComponentType;
+
+  beforeAll(async () => {
+    ({ default: App } = await import("@/App"));
+  });
+
   beforeEach(() => {
     resetProviderState();
     toastSuccessMock.mockReset();
@@ -221,7 +245,6 @@ describe("App integration with MSW", () => {
   });
 
   it("shows toast when auto sync fails in background", async () => {
-    const { default: App } = await import("@/App");
     renderApp(App);
 
     expect(
@@ -263,7 +286,6 @@ describe("App integration with MSW", () => {
   it("lands on Skills instead of the removed provider page", async () => {
     setSettings({ firstRunNoticeConfirmed: true });
     localStorage.setItem("mskills-last-view", "providers");
-    const { default: App } = await import("@/App");
     renderApp(App);
 
     expect(
@@ -283,7 +305,6 @@ describe("App integration with MSW", () => {
     async (enabled) => {
       setSettings({ openSkillsOnStartup: enabled });
       localStorage.setItem("mskills-last-view", "skills");
-      const { default: App } = await import("@/App");
       const { client } = renderApp(App);
 
       expect(
@@ -316,7 +337,6 @@ describe("App integration with MSW", () => {
       },
     });
     localStorage.setItem("mskills-last-view", "skills");
-    const { default: App } = await import("@/App");
     const { client } = renderApp(App);
     await waitFor(() =>
       expect(
@@ -338,7 +358,6 @@ describe("App integration with MSW", () => {
 
   it("hosts the Skills check-update action in the App toolbar", async () => {
     localStorage.setItem("mskills-last-view", "skills");
-    const { default: App } = await import("@/App");
     renderApp(App);
 
     expect(
@@ -390,7 +409,6 @@ describe("App integration with MSW", () => {
     );
     localStorage.setItem("mskills-last-view", "skills");
     localStorage.setItem("mskills-last-app", "pi");
-    const { default: App } = await import("@/App");
     renderApp(App);
 
     const trigger = await screen.findByRole("combobox", {
@@ -416,7 +434,6 @@ describe("App integration with MSW", () => {
         ]),
       ),
     );
-    const { default: App } = await import("@/App");
     renderApp(App);
 
     expect(
@@ -426,7 +443,6 @@ describe("App integration with MSW", () => {
 
   it("routes the Skills discover toolbar action through the panel guard", async () => {
     localStorage.setItem("mskills-last-view", "skills");
-    const { default: App } = await import("@/App");
     renderApp(App);
 
     expect(
@@ -444,7 +460,6 @@ describe("App integration with MSW", () => {
 
   it("groups the Skills add actions under one toolbar menu", async () => {
     localStorage.setItem("mskills-last-view", "skills");
-    const { default: App } = await import("@/App");
     renderApp(App);
     const user = userEvent.setup({ pointerEventsCheck: 0 });
 

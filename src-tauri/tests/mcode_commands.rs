@@ -38,6 +38,9 @@ fn failed_mcode_prompt_writes_preserve_state_and_can_be_retried() {
     assert!(!state.db.get_prompts("mcode").unwrap()[&active.id].enabled);
     assert_eq!(fs::read_to_string(&path).unwrap(), "");
     PromptService::upsert_prompt(&state, AppType::Mcode, &active.id, edited).unwrap();
-    assert_eq!(fs::read_to_string(&path).unwrap(), "updated");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "<!-- mskills:start id=\"active\" -->\nupdated\n<!-- mskills:end id=\"active\" -->"
+    );
     assert!(state.db.get_prompts("mcode").unwrap()[&active.id].enabled);
 }
