@@ -2224,6 +2224,7 @@
     "saveFailed": "儲存失敗",
     "deleteSuccess": "刪除成功",
     "deleteFailed": "刪除失敗",
+    "stopBeforeDelete": "目前已啟用，請先關閉後再刪除",
     "enableSuccess": "啟用成功",
     "enableFailed": "啟用失敗",
     "disableSuccess": "停用成功",

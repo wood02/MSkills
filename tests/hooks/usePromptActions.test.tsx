@@ -509,5 +509,17 @@ describe("usePromptActions reload concurrency", () => {
     expect(mocks.toastError).toHaveBeenCalledWith("prompts.saveFailed", {
       description: "Invalid markers",
     });
+
+    mocks.deletePrompt.mockRejectedValueOnce(
+      new Error("无法删除已启用的提示词"),
+    );
+    await act(async () => {
+      await expect(result.current.deletePrompt("active")).rejects.toThrow(
+        "无法删除已启用的提示词",
+      );
+    });
+    expect(mocks.toastError).toHaveBeenCalledWith("prompts.deleteFailed", {
+      description: "无法删除已启用的提示词",
+    });
   });
 });

@@ -35,9 +35,18 @@ const mocks = vi.hoisted(() => ({
   toggleEnabled: vi.fn(),
   reorderPrompts: vi.fn(),
   saveCurrentFileContent: vi.fn(),
+  toastInfo: vi.fn(),
   onDragEnd: null as
     | ((event: import("@dnd-kit/core").DragEndEvent) => void)
     | null,
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    info: mocks.toastInfo,
+    success: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock("@dnd-kit/core", async () => {
@@ -229,6 +238,7 @@ describe("PromptPanel", () => {
     mocks.reorderPrompts.mockResolvedValue(true);
     mocks.saveCurrentFileContent.mockReset();
     mocks.saveCurrentFileContent.mockResolvedValue(true);
+    mocks.toastInfo.mockReset();
     mocks.onDragEnd = null;
   });
 
@@ -316,7 +326,16 @@ describe("PromptPanel", () => {
   });
 
   it("preserves record IDs for filtered toggle, edit, and delete actions", async () => {
-    renderPanel();
+    mocks.toggleEnabled.mockImplementationOnce(
+      async (id: string, next: boolean) => {
+        mocks.state.prompts = {
+          ...mocks.state.prompts,
+          [id]: { ...mocks.state.prompts[id], enabled: next },
+        };
+        return true;
+      },
+    );
+    const view = renderPanel();
     await waitForPanelReady();
     searchFor("quasar instruction");
 
@@ -325,6 +344,9 @@ describe("PromptPanel", () => {
     await waitFor(() => {
       expect(screen.getByTitle("common.edit")).toBeEnabled();
     });
+    view.rerender(
+      <PromptPanel open appId="claude" onOpenChange={() => undefined} />,
+    );
 
     fireEvent.click(screen.getByTitle("common.edit"));
     expect(screen.getByTestId("prompt-form")).toHaveTextContent(
@@ -804,5 +826,21 @@ describe("PromptPanel", () => {
         "@RTK.md\n\n# Updated Content",
       );
     });
+  });
+
+  it("disables deleting an enabled prompt and hints why when hovered or clicked", async () => {
+    renderPanel();
+    await waitForPanelReady();
+
+    const blockedDeleteButton = screen.getByRole("button", {
+      name: "prompts.stopBeforeDelete",
+    });
+    expect(blockedDeleteButton).toBeDisabled();
+    expect(screen.getByTitle("common.delete")).toBeEnabled();
+
+    fireEvent.click(screen.getByTitle("prompts.stopBeforeDelete"));
+    expect(mocks.toastInfo).toHaveBeenCalledWith("prompts.stopBeforeDelete");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocks.deletePrompt).not.toHaveBeenCalled();
   });
 });

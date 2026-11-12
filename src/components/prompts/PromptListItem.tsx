@@ -5,6 +5,7 @@ import type {
 } from "@dnd-kit/core";
 import { useTranslation } from "react-i18next";
 import { Edit3, GripVertical, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Prompt } from "@/lib/api";
@@ -45,6 +46,7 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
   const { t } = useTranslation();
 
   const enabled = prompt.enabled === true;
+  const deleteLabel = deleteTitle ?? t("common.delete");
 
   return (
     <div
@@ -121,17 +123,36 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
           >
             <Edit3 size={16} />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => onDelete(id)}
-            disabled={disabled || deleteDisabled}
-            className="hover:text-red-500 hover:bg-red-100 disabled:opacity-100 dark:hover:text-red-400 dark:hover:bg-red-500/10"
-            title={deleteTitle ?? t("common.delete")}
-          >
-            <Trash2 size={16} />
-          </Button>
+          {deleteDisabled ? (
+            <span
+              title={deleteLabel}
+              onClick={disabled ? undefined : () => toast.info(deleteLabel)}
+              className="inline-flex cursor-not-allowed"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled
+                aria-label={deleteLabel}
+                className="disabled:opacity-35"
+              >
+                <Trash2 size={16} />
+              </Button>
+            </span>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => onDelete(id)}
+              disabled={disabled}
+              className="hover:text-red-500 hover:bg-red-100 disabled:opacity-100 dark:hover:text-red-400 dark:hover:bg-red-500/10"
+              title={deleteLabel}
+            >
+              <Trash2 size={16} />
+            </Button>
+          )}
         </div>
       </div>
     </div>

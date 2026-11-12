@@ -2223,6 +2223,7 @@
     "saveFailed": "Failed to save",
     "deleteSuccess": "Deleted successfully",
     "deleteFailed": "Failed to delete",
+    "stopBeforeDelete": "Disable this prompt before deleting it",
     "enableSuccess": "Enabled successfully",
     "enableFailed": "Failed to enable",
     "disableSuccess": "Disabled successfully",
