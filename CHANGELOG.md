@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v1.0.8 - 2026-11-12
+
+- 多提示词分段拼接、拖拽排序与双向同步：
+  - 支持在同一目标文件（`CLAUDE.md`、`AGENTS.md`、`GEMINI.md`、`SOUL.md` 等）中通过 `<!-- mskills:start/end id="..." -->` 分段标记同时启用并拼接多条提示词，兼容保留手动外部内容（如 `@RTK.md`）。
+  - 支持通过 `@dnd-kit` 拖拽调整多条提示词顺序，并支持在“查看拼接结果”中直接在线编辑后同步回写对应提示词；恢复备份或导入 SQL 时自动排除旧库无标记提示词残留。
+- RTK Token 优化看板与品牌图标补全：
+  - 新增 RTK CLI 检测、历史节省 Token 统计与多端 Agent 一键接入状态管理（`RtkDashboard` / `RtkService`）。
+  - 补充 Cursor CLI（`cursor.svg`）、Droid（`factory.svg`）、Cline（`cline.svg`）品牌矢量图标，并优化 Skills 仓库头像展示与本地缓存。
+
 ## v1.0.7 - 2026-11-11
 
 - Skill 使用统计支持 Token 维度消耗与趋势展示：
