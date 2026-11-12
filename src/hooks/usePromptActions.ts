@@ -135,7 +135,9 @@ export function usePromptActions(appId: AppId) {
         toast.success(t("prompts.deleteSuccess"), { closeButton: true });
         return refreshed;
       } catch (error) {
-        toast.error(t("prompts.deleteFailed"));
+        toast.error(t("prompts.deleteFailed"), {
+          description: getErrorDescription(error),
+        });
         throw error;
       }
     },

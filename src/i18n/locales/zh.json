@@ -2223,6 +2223,7 @@
     "saveFailed": "保存失败",
     "deleteSuccess": "删除成功",
     "deleteFailed": "删除失败",
+    "stopBeforeDelete": "当前已启用，请先关闭后再删除",
     "enableSuccess": "启用成功",
     "enableFailed": "启用失败",
     "disableSuccess": "禁用成功",

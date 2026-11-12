@@ -412,6 +412,10 @@ const StandardPromptPanel = React.forwardRef<
             typeof reorderPrompts === "function" ? handleReorder : undefined
           }
           showOrderBadges={enabledPrompts.length > 0}
+          isDeleteDisabled={(_id, prompt) => prompt.enabled}
+          getDeleteTitle={(_id, prompt) =>
+            prompt.enabled ? t("prompts.stopBeforeDelete") : t("common.delete")
+          }
         />
 
         <Dialog open={isPreviewOpen} onOpenChange={handlePreviewOpenChange}>
