@@ -61,6 +61,7 @@ fn prompt(id: &str, enabled: bool) -> Prompt {
         content: format!("# prompt {id}\n"),
         description: None,
         enabled,
+        sort_order: None,
         created_at: Some(1_000),
         updated_at: Some(1_000),
     }
@@ -255,7 +256,10 @@ fn profile_snapshot_apply_roundtrip_restores_configuration() {
     let live_prompt = fs::read_to_string(claude_dir.join("CLAUDE.md")).expect("read CLAUDE.md");
     assert_eq!(
         live_prompt,
-        prompt("pr1", true).content,
+        format!(
+            "<!-- mskills:start id=\"pr1\" -->\n{}\n<!-- mskills:end id=\"pr1\" -->",
+            prompt("pr1", true).content.trim_end_matches('\n')
+        ),
         "live memory file restored"
     );
 

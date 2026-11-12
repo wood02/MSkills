@@ -5,6 +5,12 @@ import { promptsApi, type Prompt, type AppId } from "@/lib/api";
 
 const EMPTY_PROMPTS: Record<string, Prompt> = {};
 
+function getErrorDescription(error: unknown): string | undefined {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return undefined;
+}
+
 export function usePromptActions(appId: AppId) {
   const { t } = useTranslation();
   const [prompts, setPrompts] = useState<Record<string, Prompt>>({});
@@ -106,7 +112,9 @@ export function usePromptActions(appId: AppId) {
         });
         return refreshed;
       } catch (error) {
-        toast.error(t("prompts.saveFailed"));
+        toast.error(t("prompts.saveFailed"), {
+          description: getErrorDescription(error),
+        });
         throw error;
       }
     },
@@ -138,20 +146,18 @@ export function usePromptActions(appId: AppId) {
     async (id: string) => {
       try {
         await promptsApi.enablePrompt(appId, id);
-        updatePromptsForApp(appId, (current) =>
-          Object.fromEntries(
-            Object.entries(current).map(([key, prompt]) => [
-              key,
-              { ...prompt, enabled: key === id },
-            ]),
-          ),
-        );
+        updatePromptsForApp(appId, (current) => ({
+          ...current,
+          [id]: { ...current[id], enabled: true },
+        }));
         const refreshed =
           currentAppIdRef.current === appId ? await reload() : false;
         toast.success(t("prompts.enableSuccess"), { closeButton: true });
         return refreshed;
       } catch (error) {
-        toast.error(t("prompts.enableFailed"));
+        toast.error(t("prompts.enableFailed"), {
+          description: getErrorDescription(error),
+        });
         throw error;
       }
     },
@@ -192,6 +198,7 @@ export function usePromptActions(appId: AppId) {
         } catch (error) {
           toast.error(
             enabled ? t("prompts.enableFailed") : t("prompts.disableFailed"),
+            { description: getErrorDescription(error) },
           );
           throw error;
         } finally {
@@ -202,39 +209,21 @@ export function usePromptActions(appId: AppId) {
       const previousPrompts = visiblePrompts;
       const mutationGeneration = reloadGenerationRef.current;
 
-      if (enabled) {
-        const updatedPrompts = Object.keys(visiblePrompts).reduce(
-          (acc, key) => {
-            acc[key] = {
-              ...visiblePrompts[key],
-              enabled: key === id,
-            };
-            return acc;
-          },
-          {} as Record<string, Prompt>,
-        );
-        updatePromptsForApp(appId, () => updatedPrompts);
-      } else {
-        updatePromptsForApp(appId, (current) => ({
-          ...current,
-          [id]: {
-            ...current[id],
-            enabled: false,
-          },
-        }));
-      }
+      // 多选拼接模式下仅更新当前开关状态，不关闭其余已启用提示词
+      updatePromptsForApp(appId, (current) => ({
+        ...current,
+        [id]: {
+          ...current[id],
+          enabled,
+        },
+      }));
 
       try {
-        if (enabled) {
-          await promptsApi.enablePrompt(appId, id);
-          toast.success(t("prompts.enableSuccess"), { closeButton: true });
-        } else {
-          await promptsApi.upsertPrompt(appId, id, {
-            ...visiblePrompts[id],
-            enabled: false,
-          });
-          toast.success(t("prompts.disableSuccess"), { closeButton: true });
-        }
+        await promptsApi.setPromptEnabled(appId, id, enabled);
+        toast.success(
+          enabled ? t("prompts.enableSuccess") : t("prompts.disableSuccess"),
+          { closeButton: true },
+        );
         return currentAppIdRef.current === appId ? await reload() : false;
       } catch (error) {
         if (
@@ -245,11 +234,74 @@ export function usePromptActions(appId: AppId) {
         }
         toast.error(
           enabled ? t("prompts.enableFailed") : t("prompts.disableFailed"),
+          { description: getErrorDescription(error) },
         );
         throw error;
       }
     },
     [appId, reload, t, updatePromptsForApp, visiblePrompts],
+  );
+
+  const reorderPrompts = useCallback(
+    async (ids: string[]) => {
+      const previousPrompts = visiblePrompts;
+      const mutationGeneration = reloadGenerationRef.current;
+
+      updatePromptsForApp(appId, (current) => {
+        const reordered: Record<string, Prompt> = {};
+        let index = 0;
+        for (const id of ids) {
+          if (current[id]) {
+            reordered[id] = { ...current[id], sortOrder: index++ };
+          }
+        }
+        for (const [key, prompt] of Object.entries(current)) {
+          if (!reordered[key]) {
+            reordered[key] = { ...prompt, sortOrder: index++ };
+          }
+        }
+        return reordered;
+      });
+
+      try {
+        await promptsApi.reorderPrompts(appId, ids);
+        return currentAppIdRef.current === appId ? await reload() : false;
+      } catch (error) {
+        if (
+          currentAppIdRef.current === appId &&
+          reloadGenerationRef.current === mutationGeneration
+        ) {
+          updatePromptsForApp(appId, () => previousPrompts);
+        }
+        toast.error(t("prompts.reorderFailed"), {
+          description: getErrorDescription(error),
+        });
+        throw error;
+      }
+    },
+    [appId, reload, t, updatePromptsForApp, visiblePrompts],
+  );
+
+  const saveCurrentFileContent = useCallback(
+    async (content: string) => {
+      try {
+        await promptsApi.saveCurrentFileContent(appId, content);
+        if (currentAppIdRef.current === appId) {
+          setCurrentFileContent(content);
+          setCurrentFileAppId(appId);
+        }
+        const refreshed =
+          currentAppIdRef.current === appId ? await reload() : false;
+        toast.success(t("prompts.saveFileSuccess"), { closeButton: true });
+        return refreshed;
+      } catch (error) {
+        toast.error(t("prompts.saveFailed"), {
+          description: getErrorDescription(error),
+        });
+        throw error;
+      }
+    },
+    [appId, reload, t],
   );
 
   const importFromFile = useCallback(async () => {
@@ -276,6 +328,8 @@ export function usePromptActions(appId: AppId) {
     deletePrompt,
     enablePrompt,
     toggleEnabled,
+    reorderPrompts,
+    saveCurrentFileContent,
     importFromFile,
   };
 }

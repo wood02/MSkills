@@ -85,6 +85,7 @@ import PromptPanel, {
   type PromptPanelHandle,
   type PromptPrimaryAction,
 } from "@/components/prompts/PromptPanel";
+import { RtkDashboard } from "@/components/prompts/rtk/RtkDashboard";
 import {
   SkillsPage,
   getSkillsPageHeaderActions,
@@ -199,6 +200,9 @@ function App() {
   const [currentView, setCurrentView] = useState<View>(getInitialView);
   const [skillsDiscoverySource, setSkillsDiscoverySource] =
     useState<SkillsPageSource>("repos");
+  const [promptSubView, setPromptSubView] = useState<"default" | "rtk">(
+    "default",
+  );
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
@@ -1093,6 +1097,9 @@ function App() {
             />
           );
         case "prompts":
+          if (promptSubView === "rtk") {
+            return <RtkDashboard onBack={() => setPromptSubView("default")} />;
+          }
           return (
             <PromptPanel
               ref={promptPanelRef}
@@ -1459,22 +1466,24 @@ function App() {
                 className="flex shrink-0 items-center gap-1.5"
                 style={{ WebkitAppRegion: "no-drag" } as any}
               >
-                {currentView === "prompts" && promptPrimaryAction && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={promptManagementBusy}
-                    onClick={() => promptPanelRef.current?.openAdd()}
-                    className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    {t(
-                      promptPrimaryAction === "template"
-                        ? "pi.prompts.newTemplate"
-                        : "prompts.add",
-                    )}
-                  </Button>
-                )}
+                {currentView === "prompts" &&
+                  promptSubView !== "rtk" &&
+                  promptPrimaryAction && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={promptManagementBusy}
+                      onClick={() => promptPanelRef.current?.openAdd()}
+                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      {t(
+                        promptPrimaryAction === "template"
+                          ? "pi.prompts.newTemplate"
+                          : "prompts.add",
+                      )}
+                    </Button>
+                  )}
                 {currentView === "mcp" && (
                   <>
                     <Button
@@ -1818,11 +1827,44 @@ function App() {
               {(currentView === "prompts" || currentView === "sessions") && (
                 <AppSwitcher
                   activeApp={activeApp}
-                  onSwitch={setActiveApp}
+                  onSwitch={(app) => {
+                    setActiveApp(app);
+                    if (currentView === "prompts" && promptSubView === "rtk") {
+                      setPromptSubView("default");
+                    }
+                  }}
                   visibleApps={visibleApps}
+                  suppressActiveHighlight={
+                    currentView === "prompts" && promptSubView === "rtk"
+                  }
                 />
               )}
             </div>
+            {/* 提示词中间工具槽：RTK（未来可在此并排扩展其它工具） */}
+            {currentView === "prompts" && (
+              <div
+                className="flex shrink-0 items-center gap-1.5 px-1 mr-1"
+                style={{ WebkitAppRegion: "no-drag" } as any}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPromptSubView((prev) =>
+                      prev === "rtk" ? "default" : "rtk",
+                    )
+                  }
+                  className={cn(
+                    "h-7 px-3 text-xs font-semibold rounded-lg border transition-all cursor-pointer select-none",
+                    promptSubView === "rtk"
+                      ? "bg-foreground text-background border-foreground shadow-xs"
+                      : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/60",
+                  )}
+                  title="RTK 终端命令输出优化与统计"
+                >
+                  RTK
+                </button>
+              </div>
+            )}
             {/* 页面导航和设置固定在最右，切页时位置不动 */}
             {MAIN_VIEWS.includes(currentView) && (
               <div
@@ -1855,7 +1897,16 @@ function App() {
                       variant="ghost"
                       size="sm"
                       disabled={managementBusy && currentView !== view}
-                      onClick={() => setCurrentView(view)}
+                      onClick={() => {
+                        if (view === "prompts" && currentView === "prompts") {
+                          setPromptSubView("default");
+                        } else {
+                          setCurrentView(view);
+                          if (view === "prompts") {
+                            setPromptSubView("default");
+                          }
+                        }
+                      }}
                       aria-current={currentView === view ? "page" : undefined}
                       className={cn(
                         "relative w-8 px-2 text-muted-foreground hover:text-foreground",

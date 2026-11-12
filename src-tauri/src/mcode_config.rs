@@ -530,7 +530,13 @@ mod capability_tests {
         let prompts = PromptService::get_prompts(&state, AppType::Mcode).unwrap();
         let (id, prompt) = prompts.first().unwrap();
         PromptService::enable_prompt(&state, AppType::Mcode, id).unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), prompt.content);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!(
+                "<!-- mskills:start id=\"{id}\" -->\n{}\n<!-- mskills:end id=\"{id}\" -->",
+                prompt.content.trim_end_matches('\n')
+            )
+        );
         let mut oversized = prompt.clone();
         oversized.id = "oversized".into();
         oversized.content = "中".repeat(10923);
@@ -551,7 +557,13 @@ mod capability_tests {
         oversized.enabled = true;
         db.save_prompt("mcode", &oversized).unwrap();
         assert!(PromptService::sync_to_live(&state, AppType::Mcode).is_err());
-        assert_eq!(fs::read_to_string(&path).unwrap(), prompt.content);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!(
+                "<!-- mskills:start id=\"{id}\" -->\n{}\n<!-- mskills:end id=\"{id}\" -->",
+                prompt.content.trim_end_matches('\n')
+            )
+        );
         db.delete_prompt("mcode", "oversized").unwrap();
         db.save_prompt("mcode", prompt).unwrap();
         let mut disabled = prompt.clone();
@@ -559,7 +571,13 @@ mod capability_tests {
         PromptService::upsert_prompt(&state, AppType::Mcode, id, disabled).unwrap();
         assert!(fs::read_to_string(&path).unwrap().is_empty());
         PromptService::enable_prompt(&state, AppType::Mcode, id).unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), original_instructions);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!(
+                "<!-- mskills:start id=\"{id}\" -->\n{}\n<!-- mskills:end id=\"{id}\" -->",
+                original_instructions.trim_end_matches('\n')
+            )
+        );
         let skill_dir = SkillService::get_ssot_dir()
             .unwrap()
             .join("mskills-validation");

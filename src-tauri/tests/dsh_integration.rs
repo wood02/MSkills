@@ -77,7 +77,7 @@ async fn dsh_directory_override_routes_native_features_and_can_be_reset() {
     PromptService::enable_prompt(&state, AppType::Dsh, "custom").unwrap();
     assert_eq!(
         fs::read_to_string(custom.path().join("AGENTS.md")).unwrap(),
-        "Custom root instructions"
+        "<!-- mskills:start id=\"custom\" -->\nCustom root instructions\n<!-- mskills:end id=\"custom\" -->"
     );
     let skill =
         SkillService::create_local_skill(&state.db, "custom-dsh-skill", "Custom root").unwrap();
@@ -220,14 +220,8 @@ fn dsh_provider_mcp_prompt_and_skill_group_lifecycle() {
     PromptService::enable_prompt(&state, AppType::Dsh, "draft").unwrap();
     assert_eq!(
         fs::read_to_string(&instructions).unwrap(),
-        "Managed instructions"
+        "Original instructions\n\n<!-- mskills:start id=\"draft\" -->\nManaged instructions\n<!-- mskills:end id=\"draft\" -->"
     );
-    assert!(state
-        .db
-        .get_prompts("dsh")
-        .unwrap()
-        .values()
-        .any(|p| p.content == "Original instructions"));
     let skill = SkillService::create_local_skill(&state.db, "dsh-example", "Test DSH").unwrap();
     SkillService::toggle_app(&state.db, &skill.id, &AppType::Dsh, true).unwrap();
     assert!(home.join("skills/dsh-example/SKILL.md").exists());

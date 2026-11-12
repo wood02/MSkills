@@ -26,12 +26,53 @@ const mocks = vi.hoisted(() => ({
       }
     >,
     loading: false,
+    currentFileContent: null as string | null,
   },
   reload: vi.fn(),
   getReload: vi.fn(),
   savePrompt: vi.fn(),
   deletePrompt: vi.fn(),
   toggleEnabled: vi.fn(),
+  reorderPrompts: vi.fn(),
+  saveCurrentFileContent: vi.fn(),
+  onDragEnd: null as
+    | ((event: import("@dnd-kit/core").DragEndEvent) => void)
+    | null,
+}));
+
+vi.mock("@dnd-kit/core", async () => {
+  const actual =
+    await vi.importActual<typeof import("@dnd-kit/core")>("@dnd-kit/core");
+  return {
+    ...actual,
+    DndContext: (
+      props: React.ComponentProps<typeof actual.DndContext>,
+    ) => {
+      mocks.onDragEnd = props.onDragEnd ?? null;
+      return <actual.DndContext {...props} />;
+    },
+  };
+});
+
+vi.mock("@/components/MarkdownEditor", () => ({
+  default: ({
+    ariaLabel,
+    value,
+    onChange,
+    readOnly,
+  }: {
+    ariaLabel?: string;
+    value: string;
+    onChange?: (value: string) => void;
+    readOnly?: boolean;
+  }) => (
+    <textarea
+      aria-label={ariaLabel ?? "markdown-editor"}
+      value={value}
+      disabled={readOnly}
+      onChange={(event) => onChange?.(event.target.value)}
+    />
+  ),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -39,6 +80,12 @@ vi.mock("react-i18next", () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (key === "prompts.count") return `${key}:${options?.count}`;
       if (key === "prompts.enabledName") return `${key}:${options?.name}`;
+      if (key === "prompts.enabledMultiple") {
+        return `${key}:${options?.count}:${options?.names}`;
+      }
+      if (key === "prompts.currentFile") {
+        return `${key}:${options?.filename}`;
+      }
       if (key === "prompts.confirm.deleteMessage") {
         return `${key}:${options?.name}`;
       }
@@ -50,11 +97,14 @@ vi.mock("react-i18next", () => ({
 vi.mock("@/hooks/usePromptActions", () => ({
   usePromptActions: (appId: AppId) => ({
     prompts: mocks.state.prompts,
+    currentFileContent: mocks.state.currentFileContent,
     loading: mocks.state.loading,
     reload: mocks.getReload(appId),
     savePrompt: mocks.savePrompt,
     deletePrompt: mocks.deletePrompt,
     toggleEnabled: mocks.toggleEnabled,
+    reorderPrompts: mocks.reorderPrompts,
+    saveCurrentFileContent: mocks.saveCurrentFileContent,
   }),
 }));
 
@@ -164,6 +214,7 @@ describe("PromptPanel", () => {
   beforeEach(() => {
     mocks.state.prompts = createPrompts();
     mocks.state.loading = false;
+    mocks.state.currentFileContent = null;
     mocks.reload.mockReset();
     mocks.reload.mockResolvedValue(true);
     mocks.getReload.mockReset();
@@ -174,6 +225,11 @@ describe("PromptPanel", () => {
     mocks.deletePrompt.mockResolvedValue(true);
     mocks.toggleEnabled.mockReset();
     mocks.toggleEnabled.mockResolvedValue(true);
+    mocks.reorderPrompts.mockReset();
+    mocks.reorderPrompts.mockResolvedValue(true);
+    mocks.saveCurrentFileContent.mockReset();
+    mocks.saveCurrentFileContent.mockResolvedValue(true);
+    mocks.onDragEnd = null;
   });
 
   it.each([
@@ -661,6 +717,92 @@ describe("PromptPanel", () => {
     );
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows multi-enabled summary, concatenation order badges, supports drag reordering unless filtering, and allows editing live file", async () => {
+    mocks.state.prompts = {
+      "record-index-47": {
+        id: "payload-identifier-92",
+        name: "Aurora Prompt",
+        description: "First prompt",
+        content: "Follow the quasar instruction.",
+        enabled: true,
+      },
+      "second-record": {
+        id: "second-payload",
+        name: "Harbor Prompt",
+        description: "Second prompt",
+        content: "Prepare the release notes.",
+        enabled: true,
+      },
+    };
+    mocks.state.currentFileContent = "@RTK.md\n\n# Composed";
+
+    renderPanel("antigravity");
+    await waitForPanelReady();
+
+    expect(
+      screen.getByText(
+        /prompts\.enabledMultiple:2:Aurora Prompt \+ Harbor Prompt/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("#1")).toBeInTheDocument();
+    expect(screen.getByText("#2")).toBeInTheDocument();
+
+    const dragHandles = screen.getAllByRole("button", {
+      name: "prompts.dragHandle",
+    });
+    expect(dragHandles).toHaveLength(2);
+    expect(dragHandles[0]).toBeEnabled();
+    expect(dragHandles[1]).toBeEnabled();
+
+    act(() => {
+      mocks.onDragEnd?.({
+        active: { id: "record-index-47" },
+        over: { id: "second-record" },
+      } as import("@dnd-kit/core").DragEndEvent);
+    });
+    await waitFor(() => {
+      expect(mocks.reorderPrompts).toHaveBeenCalledWith([
+        "second-record",
+        "record-index-47",
+      ]);
+    });
+
+    searchFor("Aurora");
+    expect(
+      screen.getByRole("button", { name: "prompts.dragHandle" }),
+    ).toBeDisabled();
+    searchFor("");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /prompts\.viewEditFile/ }),
+    );
+    const editor = screen.getByRole("textbox", {
+      name: "prompts.currentFile:GEMINI.md",
+    });
+    expect(editor).toHaveValue("@RTK.md\n\n# Composed");
+
+    const saveBtn = screen.getByRole("button", { name: "common.save" });
+    expect(saveBtn).toBeDisabled();
+
+    // 超过 Antigravity 24,000 字节上限时应提示并禁止保存
+    fireEvent.change(editor, { target: { value: "x".repeat(24_001) } });
+    expect(screen.getByText(/prompts\.fileOverLimit/)).toBeInTheDocument();
+    expect(saveBtn).toBeDisabled();
+
+    // 修改回合法内容后保存
+    fireEvent.change(editor, {
+      target: { value: "@RTK.md\n\n# Updated Content" },
+    });
+    expect(saveBtn).toBeEnabled();
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(mocks.saveCurrentFileContent).toHaveBeenCalledWith(
+        "@RTK.md\n\n# Updated Content",
+      );
     });
   });
 });

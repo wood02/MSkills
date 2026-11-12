@@ -71,6 +71,9 @@ const PromptFormPanel: React.FC<PromptFormPanelProps> = ({
         description: description.trim() || undefined,
         content: appId === "pi" ? content : content.trim(),
         enabled: initialData?.enabled || false,
+        ...(initialData?.sortOrder !== undefined
+          ? { sortOrder: initialData.sortOrder }
+          : {}),
         createdAt: initialData?.createdAt || timestamp,
         updatedAt: timestamp,
       };

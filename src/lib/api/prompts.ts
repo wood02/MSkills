@@ -7,6 +7,7 @@ export interface Prompt {
   content: string;
   description?: string;
   enabled: boolean;
+  sortOrder?: number;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -42,12 +43,28 @@ export const promptsApi = {
     return await invoke("enable_prompt", { app, id });
   },
 
+  async setPromptEnabled(
+    app: AppId,
+    id: string,
+    enabled: boolean,
+  ): Promise<void> {
+    return await invoke("set_prompt_enabled", { app, id, enabled });
+  },
+
+  async reorderPrompts(app: AppId, ids: string[]): Promise<void> {
+    return await invoke("reorder_prompts", { app, ids });
+  },
+
   async importFromFile(app: AppId): Promise<string> {
     return await invoke("import_prompt_from_file", { app });
   },
 
   async getCurrentFileContent(app: AppId): Promise<string | null> {
     return await invoke("get_current_prompt_file_content", { app });
+  },
+
+  async saveCurrentFileContent(app: AppId, content: string): Promise<void> {
+    return await invoke("save_current_prompt_file_content", { app, content });
   },
 
   async getPiPromptFile(kind: PiPromptFileKind): Promise<PiPromptFileSnapshot> {

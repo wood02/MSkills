@@ -232,18 +232,20 @@ impl Database {
         // Keep one main-DB guard across the safety snapshot, local-table read,
         // and final replacement so neither the rollback point nor preserved
         // device-local rows can miss writes that arrived during staging.
-        let backup_path = {
+        let (backup_path, pre_prompts) = {
             let mut main_conn = lock_conn!(self.conn);
             let backup_path =
                 Self::backup_database_file_from_conn(&backup_file_guard, &main_conn, &[])?;
+            let pre_prompts = Self::read_enabled_prompt_contents_by_app(&main_conn)?;
             if !preserve_tables.is_empty() {
                 Self::restore_tables(&main_conn, &temp_conn, preserve_tables)?;
             }
             let backup = Backup::new(&temp_conn, &mut main_conn)
                 .map_err(|e| AppError::Database(e.to_string()))?;
             Self::complete_backup(&backup, "替换主数据库")?;
-            backup_path
+            (backup_path, pre_prompts)
         };
+        self.set_pre_restore_prompts(pre_prompts)?;
 
         let backup_id = backup_path
             .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
@@ -1072,19 +1074,21 @@ impl Database {
 
         // Keep one main-DB guard across the safety snapshot and final apply so
         // the safety file exactly represents the state being replaced.
-        let safety_backup = {
+        let (safety_backup, pre_prompts) = {
             let mut main_conn = lock_conn!(self.conn);
             let safety_backup = Self::backup_database_file_from_conn(
                 &backup_file_guard,
                 &main_conn,
                 &[backup_path.as_path()],
             )?;
+            let pre_prompts = Self::read_enabled_prompt_contents_by_app(&main_conn)?;
             before_replace(safety_backup.as_deref())?;
             let backup = Backup::new(&staging_conn, &mut main_conn)
                 .map_err(|e| AppError::Database(e.to_string()))?;
             Self::complete_backup(&backup, "恢复主数据库")?;
-            safety_backup
+            (safety_backup, pre_prompts)
         };
+        self.set_pre_restore_prompts(pre_prompts)?;
         let safety_id = safety_backup
             .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
             .unwrap_or_default();

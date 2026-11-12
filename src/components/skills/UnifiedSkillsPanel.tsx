@@ -1119,7 +1119,7 @@ const UnifiedSkillsPanel = React.forwardRef<
           </SelectContent>
         </Select>
         <div
-          className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-lg border border-border/50 bg-muted/50 p-1"
+          className="inline-flex h-9 w-36 shrink-0 items-center gap-0.5 rounded-lg border border-border/50 bg-muted/50 p-1"
           role="group"
           aria-label="模式切换"
         >
@@ -1128,7 +1128,7 @@ const UnifiedSkillsPanel = React.forwardRef<
             aria-pressed={usageMode === "count"}
             onClick={() => setUsageMode("count")}
             className={cn(
-              "h-full rounded-md px-2.5 text-xs transition-colors",
+              "flex-1 h-full rounded-md px-2 text-xs transition-colors flex items-center justify-center",
               usageMode === "count"
                 ? "bg-background font-medium text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
@@ -1141,7 +1141,7 @@ const UnifiedSkillsPanel = React.forwardRef<
             aria-pressed={usageMode === "tokens"}
             onClick={() => setUsageMode("tokens")}
             className={cn(
-              "h-full rounded-md px-2.5 text-xs transition-colors flex items-center gap-1",
+              "flex-1 h-full rounded-md px-2 text-xs transition-colors flex items-center justify-center gap-1",
               usageMode === "tokens"
                 ? "bg-purple-50 font-medium text-purple-700 ring-1 ring-inset ring-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/30"
                 : "text-muted-foreground hover:text-foreground",

@@ -162,8 +162,8 @@ impl Database {
             for (id, prompt) in prompts_map {
                 tx.execute(
                         "INSERT OR REPLACE INTO prompts (
-                            id, app_type, name, content, description, enabled, created_at, updated_at
-                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                            id, app_type, name, content, description, enabled, sort_order, created_at, updated_at
+                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                         params![
                             id,
                             app_type,
@@ -171,6 +171,7 @@ impl Database {
                             prompt.content,
                             prompt.description,
                             prompt.enabled,
+                            prompt.sort_order.unwrap_or(0),
                             prompt.created_at,
                             prompt.updated_at,
                         ],
