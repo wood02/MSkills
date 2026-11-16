@@ -22,7 +22,8 @@ use crate::services::project::git_exclude::{
     prepare_git_exclude_for_symlink, release_git_exclude_ref,
 };
 use crate::services::project::journal::{
-    recover_pending_operations, ExtraSwapPaths, JournalBeginSpec, JournalGuard, JournalPayload,
+    acquire_journal_op_lock, recover_pending_operations_locked, ExtraSwapPaths, JournalBeginSpec,
+    JournalGuard, JournalPayload,
 };
 use crate::services::project::project_op_lock;
 use crate::services::skill::{skill_state_read_guard, SkillService};
@@ -146,7 +147,8 @@ pub fn deploy_skills_to_project(
     let lock = project_op_lock(project_id);
     let _project_guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     let _skill_read = skill_state_read_guard();
-    let _ = recover_pending_operations(db)?;
+    let _journal_lock = acquire_journal_op_lock();
+    let _ = recover_pending_operations_locked(db, &_journal_lock)?;
 
     let project = db
         .get_project(project_id)?
@@ -306,16 +308,11 @@ pub fn deploy_skills_to_project(
                 continue;
             }
 
-            // Copy mode: if target == "claude" and agents was just deployed (or synced in same project),
+            // Copy mode: if target == "claude" and agents was deployed or verified synced in this pass,
             // attempt relative_alias (../../.agents/skills/<dir>) first, fallback to independent copy!
             let use_relative_alias = target == "claude"
                 && ordered_targets.iter().any(|t| t == "agents")
-                && (agents_deployed_for_alias
-                    || root
-                        .join(".agents")
-                        .join("skills")
-                        .join(&directory)
-                        .is_dir());
+                && agents_deployed_for_alias;
 
             let op_nonce = Uuid::new_v4().to_string();
             let stage_root =
@@ -501,7 +498,8 @@ pub fn update_project_deployments(
     let lock = project_op_lock(project_id);
     let _project_guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     let _skill_read = skill_state_read_guard();
-    let _ = recover_pending_operations(db)?;
+    let _journal_lock = acquire_journal_op_lock();
+    let _ = recover_pending_operations_locked(db, &_journal_lock)?;
 
     let project = db
         .get_project(project_id)?
@@ -643,7 +641,8 @@ pub fn promote_claude_deployment(
     let lock = project_op_lock(project_id);
     let _project_guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     let _skill_read = skill_state_read_guard();
-    let _ = recover_pending_operations(db)?;
+    let _journal_lock = acquire_journal_op_lock();
+    let _ = recover_pending_operations_locked(db, &_journal_lock)?;
 
     let directory = validate_skill_directory_name(directory)?;
     let project = db
@@ -858,7 +857,8 @@ pub fn undeploy_project_skill(
     let lock = project_op_lock(project_id);
     let _project_guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     let _skill_read = skill_state_read_guard();
-    let _ = recover_pending_operations(db)?;
+    let _journal_lock = acquire_journal_op_lock();
+    let _ = recover_pending_operations_locked(db, &_journal_lock)?;
 
     let directory = validate_skill_directory_name(directory)?;
     let project = db
@@ -880,6 +880,7 @@ pub fn undeploy_project_skill(
         return Ok(());
     }
 
+    verify_relative_chain_no_symlinks(&root, &segs, false)?;
     let disk_exists = fs::symlink_metadata(&dest_path).is_ok();
     if disk_exists {
         if is_symlink(&dest_path) {
@@ -1095,17 +1096,32 @@ pub fn push_skill_to_global(
     validate_skill_tree(&project_skill_dir)?;
 
     let existing_dep = db.get_project_deployment(project_id, target, &directory)?;
-    let target_skill_id = existing_dep
+    let bound_inst_id = existing_dep
         .as_ref()
         .and_then(|d| d.skill_installation_id.as_deref())
-        .and_then(|iid| {
-            db.get_all_installed_skills().ok().and_then(|m| {
-                m.into_values()
-                    .find(|s| s.installation_id == iid)
-                    .map(|s| s.id)
-            })
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let target_skill_id = if let Some(iid) = bound_inst_id {
+        db.get_all_installed_skills().ok().and_then(|m| {
+            m.into_values()
+                .find(|s| s.installation_id == iid)
+                .map(|s| s.id)
         })
-        .or_else(|| existing_dep.as_ref().and_then(|d| d.skill_id.clone()));
+    } else {
+        existing_dep.as_ref().and_then(|d| d.skill_id.clone())
+    };
+
+    if bound_inst_id.is_some() && target_skill_id.is_none() && !overwrite_existing {
+        let old_sid = existing_dep.as_ref().and_then(|d| d.skill_id.as_deref());
+        let reinstalled = match old_sid {
+            Some(sid) => db.get_installed_skill(sid)?.is_some(),
+            None => false,
+        };
+        if reinstalled {
+            bail!("关联的全局 Skill 已卸载重装（代际变更），请先重新绑定或确认覆盖后再推送");
+        }
+    }
 
     // Note: if target_skill_id still exists in DB, allow overwrite when requested;
     // if SourceMissing (skill was uninstalled), target_skill_id might be None or absent in DB -> import fresh

@@ -21,7 +21,8 @@ use crate::database::dao::projects::{ProjectRecord, ProjectSkillDeploymentRecord
 use crate::database::Database;
 use crate::services::project::fs_safety::{
     capture_fs_identity_follow, compute_skill_tree_fingerprint,
-    ensure_path_not_overlapping_global_roots, is_symlink, remove_path_any, FsIdentity,
+    ensure_path_not_overlapping_global_roots, is_symlink, remove_path_any,
+    verify_relative_chain_no_symlinks, FsIdentity,
 };
 use crate::services::project::git_exclude::{
     inspect_git_repo, purge_project_git_exclude_block, release_git_exclude_ref,
@@ -568,6 +569,18 @@ pub fn remove_project(
         } else {
             [".agents", "skills"]
         };
+        if verify_relative_chain_no_symlinks(root, &segs, false).is_err() {
+            if dep.mode == "copy"
+                && root
+                    .join(segs[0])
+                    .join(segs[1])
+                    .join(&dep.directory)
+                    .exists()
+            {
+                preserved_copies_count += 1;
+            }
+            continue;
+        }
         let disk_path = root.join(segs[0]).join(segs[1]).join(&dep.directory);
 
         if dep.mode == "symlink" || dep.mode == "relative_alias" {

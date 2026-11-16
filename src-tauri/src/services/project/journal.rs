@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use uuid::Uuid;
 
 use crate::database::dao::projects::SkillOperationJournalRecord;
@@ -133,10 +133,21 @@ fn finalize_committed_swap(staging: Option<&str>, backup: Option<&str>) {
     }
 }
 
-/// 恢复所有未清理的 `skill_operation_journal` 记录。
-///
-/// 应在应用启动时及任何 Skill 写操作前执行（调用方需确保已持有相应的写锁）。
-pub fn recover_pending_operations(db: &Arc<Database>) -> Result<usize> {
+fn journal_op_mutex() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// 获取全局操作日志互斥锁，确保崩溃恢复与各项目/全局 `JournalGuard` 写操作串行执行。
+pub fn acquire_journal_op_lock() -> MutexGuard<'static, ()> {
+    journal_op_mutex().lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 恢复所有未清理的 `skill_operation_journal` 记录（调用方已持有 [`acquire_journal_op_lock`]）。
+pub fn recover_pending_operations_locked(
+    db: &Arc<Database>,
+    _journal_guard: &MutexGuard<'static, ()>,
+) -> Result<usize> {
     let entries = db.list_operation_journals()?;
     let mut recovered = 0usize;
 
@@ -198,4 +209,12 @@ pub fn recover_pending_operations(db: &Arc<Database>) -> Result<usize> {
     }
 
     Ok(recovered)
+}
+
+/// 恢复所有未清理的 `skill_operation_journal` 记录。
+///
+/// 应在应用启动时及任何独立崩溃恢复调用处使用。
+pub fn recover_pending_operations(db: &Arc<Database>) -> Result<usize> {
+    let guard = acquire_journal_op_lock();
+    recover_pending_operations_locked(db, &guard)
 }

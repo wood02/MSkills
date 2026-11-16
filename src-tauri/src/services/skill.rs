@@ -3284,11 +3284,13 @@ impl SkillService {
             validate_skill_tree,
         };
         use crate::services::project::journal::{
-            recover_pending_operations, JournalBeginSpec, JournalGuard, JournalPayload,
+            acquire_journal_op_lock, recover_pending_operations_locked, JournalBeginSpec,
+            JournalGuard, JournalPayload,
         };
 
         let _state_guard = skill_state_write_guard();
-        let _ = recover_pending_operations(db)?;
+        let _journal_lock = acquire_journal_op_lock();
+        let _ = recover_pending_operations_locked(db, &_journal_lock)?;
 
         let directory = validate_skill_directory_name(directory)?;
         validate_skill_tree(source_dir)?;

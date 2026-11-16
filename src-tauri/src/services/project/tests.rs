@@ -9,7 +9,8 @@ use crate::services::project::fs_safety::{
     compute_skill_tree_fingerprint, is_symlink, rename_noreplace, FsIdentity,
 };
 use crate::services::project::journal::{
-    recover_pending_operations, ExtraSwapPaths, JournalBeginSpec, JournalGuard, JournalPayload,
+    acquire_journal_op_lock, recover_pending_operations, ExtraSwapPaths, JournalBeginSpec,
+    JournalGuard, JournalPayload,
 };
 use crate::services::project::rules::{
     apply_prompt_to_project_rule, has_effective_agents_reference,
@@ -914,4 +915,271 @@ fn rules_whitelist_managed_block_agents_ref_and_deletion_snapshot() {
     .unwrap();
     assert!(restored.deleted_file);
     assert!(!proj_dir.join("CLAUDE.md").exists());
+}
+
+#[test]
+fn journal_recovery_serializes_with_active_journal_op_lock() {
+    let dir = TempDir::new().unwrap();
+    let work = dir.path().join("concurrent");
+    let staging = work.join("staging");
+    let backup = work.join("backup");
+    let dest = work.join("dest");
+    fs::create_dir_all(&staging).unwrap();
+    fs::create_dir_all(&backup).unwrap();
+    fs::write(staging.join("f.txt"), "new").unwrap();
+    fs::write(backup.join("f.txt"), "old").unwrap();
+
+    let db = Arc::new(Database::memory().unwrap());
+    let op_lock = acquire_journal_op_lock();
+    let staging_s = staging.to_string_lossy();
+    let backup_s = backup.to_string_lossy();
+    let dest_s = dest.to_string_lossy();
+    let _guard = JournalGuard::begin(
+        &db,
+        JournalBeginSpec {
+            op_type: "concurrent_op",
+            directory: Some("x"),
+            staging_path: Some(&staging_s),
+            backup_path: Some(&backup_s),
+            dest_path: Some(&dest_s),
+            ..Default::default()
+        },
+        &JournalPayload::default(),
+    )
+    .unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let db_clone = Arc::clone(&db);
+    let handle = std::thread::spawn(move || {
+        let count = recover_pending_operations(&db_clone).unwrap();
+        let _ = tx.send(count);
+    });
+
+    assert!(
+        rx.recv_timeout(std::time::Duration::from_millis(50))
+            .is_err(),
+        "活跃操作持锁期间，并发 recover_pending_operations 必须阻塞等待"
+    );
+    assert!(staging.exists(), "活跃操作的暂存目录不得被并发恢复提前删除");
+
+    drop(op_lock);
+    assert_eq!(rx.recv().unwrap(), 1);
+    handle.join().unwrap();
+    assert!(!staging.exists());
+    assert_eq!(fs::read_to_string(dest.join("f.txt")).unwrap(), "old");
+}
+
+#[test]
+#[serial]
+fn push_refuses_silent_overwrite_across_installation_generations() {
+    let env = TestEnvGuard::new();
+    let db = Arc::new(Database::memory().unwrap());
+    let (v1, v1_dir) = seed_global_skill(
+        &db,
+        env.root(),
+        "local:gen",
+        "gen",
+        "---\nname: gen\n---\nv1\n",
+    );
+
+    let proj_dir = env.root().join("proj-gen");
+    fs::create_dir_all(&proj_dir).unwrap();
+    let proj = add_project(
+        &db,
+        AddProjectInput {
+            root_path: proj_dir.to_string_lossy().to_string(),
+            name: None,
+            default_mode: Some("copy".to_string()),
+            enabled_targets: Some(vec!["agents".to_string()]),
+            auto_git_exclude: Some(false),
+            reactivate_if_archived: false,
+        },
+    )
+    .unwrap();
+
+    deploy_skills_to_project(
+        &db,
+        &proj.id,
+        &[v1.id.clone()],
+        &["agents".to_string()],
+        Some("copy"),
+        false,
+    )
+    .unwrap();
+    let proj_skill_md = proj_dir.join(".agents/skills/gen/SKILL.md");
+    fs::write(&proj_skill_md, "---\nname: gen\n---\nlocal-edit\n").unwrap();
+
+    // 卸载旧版后以同 ID 重装全新一代（installation_id 不同）
+    db.delete_skill(&v1.id).unwrap();
+    fs::remove_dir_all(&v1_dir).unwrap();
+    let (v2, v2_dir) = seed_global_skill(
+        &db,
+        env.root(),
+        "local:gen",
+        "gen",
+        "---\nname: gen\n---\nv2\n",
+    );
+    assert_ne!(v1.installation_id, v2.installation_id);
+
+    let err = push_skill_to_global(&db, &proj.id, "agents", "gen", false)
+        .expect_err("代际不一致且未显式覆盖时必须拒绝静默 Push 覆盖新全局安装");
+    assert!(
+        err.to_string().contains("代际") || err.to_string().contains("覆盖"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(
+        fs::read_to_string(v2_dir.join("SKILL.md")).unwrap(),
+        "---\nname: gen\n---\nv2\n"
+    );
+
+    // 显式确认覆盖后允许推送并重新绑定到新代际
+    let pushed = push_skill_to_global(&db, &proj.id, "agents", "gen", true).unwrap();
+    assert_eq!(
+        fs::read_to_string(v2_dir.join("SKILL.md")).unwrap(),
+        "---\nname: gen\n---\nlocal-edit\n"
+    );
+    assert_eq!(
+        pushed.deployment.skill_installation_id.as_deref(),
+        Some(pushed.skill.installation_id.as_str())
+    );
+}
+
+#[test]
+#[serial]
+fn undeploy_refuses_symlinked_target_parent_chain() {
+    let env = TestEnvGuard::new();
+    let db = Arc::new(Database::memory().unwrap());
+    let (skill, _) = seed_global_skill(
+        &db,
+        env.root(),
+        "local:escape",
+        "escape",
+        "---\nname: escape\n---\nssot\n",
+    );
+
+    let proj_dir = env.root().join("proj-escape");
+    fs::create_dir_all(proj_dir.join(".agents")).unwrap();
+    let outside_dir = env.root().join("outside-target");
+    let outside_skill = outside_dir.join("escape");
+    fs::create_dir_all(&outside_skill).unwrap();
+    fs::write(
+        outside_skill.join("SKILL.md"),
+        "---\nname: escape\n---\nkeep\n",
+    )
+    .unwrap();
+
+    crate::services::project::fs_safety::create_dir_symlink(
+        &outside_dir,
+        &proj_dir.join(".agents/skills"),
+    )
+    .unwrap();
+
+    let proj = add_project(
+        &db,
+        AddProjectInput {
+            root_path: proj_dir.to_string_lossy().to_string(),
+            name: None,
+            default_mode: Some("copy".to_string()),
+            enabled_targets: Some(vec!["agents".to_string()]),
+            auto_git_exclude: Some(false),
+            reactivate_if_archived: false,
+        },
+    )
+    .unwrap();
+    db.save_project_deployment(
+        &crate::database::dao::projects::ProjectSkillDeploymentRecord {
+            id: "dep-escape".to_string(),
+            project_id: proj.id.clone(),
+            target: "agents".to_string(),
+            directory: "escape".to_string(),
+            skill_id: Some(skill.id),
+            skill_installation_id: Some(skill.installation_id),
+            mode: "copy".to_string(),
+            managed_link_target: None,
+            deployed_hash: None,
+            last_materialized_hash: None,
+            baseline_source: Some("deploy".to_string()),
+            git_exclude_ref: None,
+            deployed_at: 1,
+            updated_at: 1,
+            detached_at: None,
+        },
+    )
+    .unwrap();
+
+    let err = undeploy_project_skill(&db, &proj.id, "agents", "escape", "force_delete")
+        .expect_err("父链含符号链接时必须拒绝删盘");
+    assert!(
+        err.to_string().contains("符号链接"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        outside_skill.join("SKILL.md").exists(),
+        "外部真实目录不得被越界删除"
+    );
+}
+
+#[test]
+#[serial]
+fn dual_target_copy_does_not_alias_when_agents_has_conflict() {
+    let env = TestEnvGuard::new();
+    let db = Arc::new(Database::memory().unwrap());
+    let (skill, _) = seed_global_skill(
+        &db,
+        env.root(),
+        "local:conf",
+        "conf",
+        "---\nname: conf\n---\nglobal\n",
+    );
+
+    let proj_dir = env.root().join("proj-conflict");
+    let conflict_agents = proj_dir.join(".agents/skills/conf");
+    fs::create_dir_all(&conflict_agents).unwrap();
+    fs::write(
+        conflict_agents.join("SKILL.md"),
+        "---\nname: conf\n---\nconflict-local\n",
+    )
+    .unwrap();
+
+    let proj = add_project(
+        &db,
+        AddProjectInput {
+            root_path: proj_dir.to_string_lossy().to_string(),
+            name: None,
+            default_mode: Some("copy".to_string()),
+            enabled_targets: Some(vec!["agents".to_string(), "claude".to_string()]),
+            auto_git_exclude: Some(false),
+            reactivate_if_archived: false,
+        },
+    )
+    .unwrap();
+
+    let res = deploy_skills_to_project(
+        &db,
+        &proj.id,
+        &[skill.id],
+        &["agents".to_string(), "claude".to_string()],
+        Some("copy"),
+        false,
+    )
+    .unwrap();
+
+    assert!(res.skipped.iter().any(|s| s.starts_with("agents/conf")));
+    assert_eq!(res.deployed.len(), 1);
+    assert_eq!(res.deployed[0].target, "claude");
+    assert_eq!(res.deployed[0].mode, "copy");
+
+    let claude_path = proj_dir.join(".claude/skills/conf");
+    assert!(
+        claude_path.is_dir() && !is_symlink(&claude_path),
+        "agents 冲突跳过时，Claude 不得创建指向冲突目录的 relative_alias"
+    );
+    assert_eq!(
+        fs::read_to_string(claude_path.join("SKILL.md")).unwrap(),
+        "---\nname: conf\n---\nglobal\n"
+    );
+    assert_eq!(
+        fs::read_to_string(conflict_agents.join("SKILL.md")).unwrap(),
+        "---\nname: conf\n---\nconflict-local\n"
+    );
 }
