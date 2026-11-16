@@ -448,14 +448,9 @@ pub fn remove_path_any(path: &Path) -> Result<()> {
             if meta.file_type().is_symlink() {
                 #[cfg(windows)]
                 {
-                    if meta.is_dir() {
-                        fs::remove_dir(path)
-                            .or_else(|_| fs::remove_file(path))
-                            .with_context(|| format!("移除符号链接失败: {}", path.display()))?;
-                    } else {
-                        fs::remove_file(path)
-                            .with_context(|| format!("移除符号链接失败: {}", path.display()))?;
-                    }
+                    fs::remove_dir(path)
+                        .or_else(|_| fs::remove_file(path))
+                        .with_context(|| format!("移除符号链接失败: {}", path.display()))?;
                 }
                 #[cfg(not(windows))]
                 {
