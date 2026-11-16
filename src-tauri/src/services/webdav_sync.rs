@@ -20,8 +20,8 @@ use super::sync_protocol::{
     apply_snapshot, build_local_snapshot, effective_db_compat_version, localized,
     persist_sync_success_best_effort, sha256_hex, validate_artifact_size_limit,
     validate_manifest_compat, verify_artifact, ArtifactMeta, RemoteLayout, SyncManifest,
-    DB_COMPAT_VERSION, MAX_MANIFEST_BYTES, MAX_SYNC_ARTIFACT_BYTES, PROTOCOL_VERSION,
-    REMOTE_DB_SQL, REMOTE_MANIFEST, REMOTE_SKILLS_ZIP,
+    DB_COMPAT_VERSION, LEGACY_DB_COMPAT_VERSION_6, MAX_MANIFEST_BYTES, MAX_SYNC_ARTIFACT_BYTES,
+    PROTOCOL_VERSION, REMOTE_DB_SQL, REMOTE_MANIFEST, REMOTE_SKILLS_ZIP,
 };
 
 #[cfg(test)]
@@ -33,6 +33,7 @@ pub(crate) mod archive;
 
 struct RemoteSnapshot {
     layout: RemoteLayout,
+    db_version_dir: Option<u32>,
     manifest: SyncManifest,
     manifest_bytes: Vec<u8>,
     manifest_etag: Option<String>,
@@ -118,7 +119,7 @@ pub async fn download(
     let db_sql = download_and_verify(
         settings,
         &auth,
-        snapshot.layout,
+        &snapshot,
         REMOTE_DB_SQL,
         &snapshot.manifest.artifacts,
     )
@@ -126,7 +127,7 @@ pub async fn download(
     let skills_zip = download_and_verify(
         settings,
         &auth,
-        snapshot.layout,
+        &snapshot,
         REMOTE_SKILLS_ZIP,
         &snapshot.manifest.artifacts,
     )
@@ -145,7 +146,7 @@ pub async fn download(
     Ok(serde_json::json!({
         "status": "downloaded",
         "sourceLayout": snapshot.layout.as_str(),
-        "sourcePath": remote_dir_display(settings, snapshot.layout),
+        "sourcePath": remote_dir_display_for_version(settings, snapshot.layout, snapshot.db_version_dir),
     }))
 }
 
@@ -169,7 +170,7 @@ pub async fn fetch_remote_info(settings: &WebDavSyncSettings) -> Result<Option<V
         "compatible": compatible,
         "artifacts": snapshot.manifest.artifacts.keys().collect::<Vec<_>>(),
         "layout": snapshot.layout.as_str(),
-        "remotePath": remote_dir_display(settings, snapshot.layout),
+        "remotePath": remote_dir_display_for_version(settings, snapshot.layout, snapshot.db_version_dir),
     });
 
     Ok(Some(payload))
@@ -198,18 +199,37 @@ async fn find_remote_snapshot(
     settings: &WebDavSyncSettings,
     auth: &WebDavAuth,
 ) -> Result<Option<RemoteSnapshot>, AppError> {
-    if let Some(snapshot) = fetch_remote_snapshot(settings, auth, RemoteLayout::Current).await? {
+    if let Some(snapshot) = fetch_remote_snapshot_at(
+        settings,
+        auth,
+        RemoteLayout::Current,
+        Some(DB_COMPAT_VERSION),
+    )
+    .await?
+    {
         return Ok(Some(snapshot));
     }
-    fetch_remote_snapshot(settings, auth, RemoteLayout::Legacy).await
+    if let Some(snapshot) = fetch_remote_snapshot_at(
+        settings,
+        auth,
+        RemoteLayout::Current,
+        Some(LEGACY_DB_COMPAT_VERSION_6),
+    )
+    .await?
+    {
+        return Ok(Some(snapshot));
+    }
+    fetch_remote_snapshot_at(settings, auth, RemoteLayout::Legacy, None).await
 }
 
-async fn fetch_remote_snapshot(
+async fn fetch_remote_snapshot_at(
     settings: &WebDavSyncSettings,
     auth: &WebDavAuth,
     layout: RemoteLayout,
+    db_version_dir: Option<u32>,
 ) -> Result<Option<RemoteSnapshot>, AppError> {
-    let manifest_url = remote_file_url(settings, layout, REMOTE_MANIFEST)?;
+    let manifest_url =
+        remote_file_url_for_version(settings, layout, db_version_dir, REMOTE_MANIFEST)?;
     let Some((manifest_bytes, manifest_etag)) =
         get_bytes(&manifest_url, auth, MAX_MANIFEST_BYTES).await?
     else {
@@ -224,6 +244,7 @@ async fn fetch_remote_snapshot(
 
     Ok(Some(RemoteSnapshot {
         layout,
+        db_version_dir,
         manifest,
         manifest_bytes,
         manifest_etag,
@@ -234,7 +255,7 @@ async fn fetch_remote_snapshot(
 async fn download_and_verify(
     settings: &WebDavSyncSettings,
     auth: &WebDavAuth,
-    layout: RemoteLayout,
+    snapshot: &RemoteSnapshot,
     artifact_name: &str,
     artifacts: &BTreeMap<String, ArtifactMeta>,
 ) -> Result<Vec<u8>, AppError> {
@@ -247,7 +268,12 @@ async fn download_and_verify(
     })?;
     validate_artifact_size_limit(artifact_name, meta.size)?;
 
-    let url = remote_file_url(settings, layout, artifact_name)?;
+    let url = remote_file_url_for_version(
+        settings,
+        snapshot.layout,
+        snapshot.db_version_dir,
+        artifact_name,
+    )?;
     let (bytes, _) = get_bytes(&url, auth, MAX_SYNC_ARTIFACT_BYTES as usize)
         .await?
         .ok_or_else(|| {
@@ -264,15 +290,39 @@ async fn download_and_verify(
 
 // ─── Remote path helpers ─────────────────────────────────────
 
-fn remote_dir_segments(settings: &WebDavSyncSettings, layout: RemoteLayout) -> Vec<String> {
+fn remote_dir_segments_for_version(
+    settings: &WebDavSyncSettings,
+    layout: RemoteLayout,
+    db_version_dir: Option<u32>,
+) -> Vec<String> {
     let mut segs = Vec::new();
     segs.extend(path_segments(&settings.remote_root).map(str::to_string));
     segs.push(format!("v{PROTOCOL_VERSION}"));
     if layout == RemoteLayout::Current {
-        segs.push(format!("db-v{DB_COMPAT_VERSION}"));
+        let ver = db_version_dir.unwrap_or(DB_COMPAT_VERSION);
+        segs.push(format!("db-v{ver}"));
     }
     segs.extend(path_segments(&settings.profile).map(str::to_string));
     segs
+}
+
+fn remote_dir_segments(settings: &WebDavSyncSettings, layout: RemoteLayout) -> Vec<String> {
+    remote_dir_segments_for_version(
+        settings,
+        layout,
+        (layout == RemoteLayout::Current).then_some(DB_COMPAT_VERSION),
+    )
+}
+
+fn remote_file_url_for_version(
+    settings: &WebDavSyncSettings,
+    layout: RemoteLayout,
+    db_version_dir: Option<u32>,
+    file_name: &str,
+) -> Result<String, AppError> {
+    let mut segs = remote_dir_segments_for_version(settings, layout, db_version_dir);
+    segs.extend(path_segments(file_name).map(str::to_string));
+    build_remote_url(&settings.base_url, &segs)
 }
 
 fn remote_file_url(
@@ -280,13 +330,20 @@ fn remote_file_url(
     layout: RemoteLayout,
     file_name: &str,
 ) -> Result<String, AppError> {
-    let mut segs = remote_dir_segments(settings, layout);
-    segs.extend(path_segments(file_name).map(str::to_string));
-    build_remote_url(&settings.base_url, &segs)
+    remote_file_url_for_version(
+        settings,
+        layout,
+        (layout == RemoteLayout::Current).then_some(DB_COMPAT_VERSION),
+        file_name,
+    )
 }
 
-fn remote_dir_display(settings: &WebDavSyncSettings, layout: RemoteLayout) -> String {
-    let segs = remote_dir_segments(settings, layout);
+fn remote_dir_display_for_version(
+    settings: &WebDavSyncSettings,
+    layout: RemoteLayout,
+    db_version_dir: Option<u32>,
+) -> String {
+    let segs = remote_dir_segments_for_version(settings, layout, db_version_dir);
     format!("/{}", segs.join("/"))
 }
 
@@ -308,7 +365,7 @@ mod tests {
             ..WebDavSyncSettings::default()
         };
         let segs = remote_dir_segments(&settings, RemoteLayout::Current);
-        assert_eq!(segs, vec!["mskills-sync", "v2", "db-v6", "default"]);
+        assert_eq!(segs, vec!["mskills-sync", "v2", "db-v7", "default"]);
     }
 
     #[test]

@@ -107,3 +107,82 @@ describe("SkillCard description", () => {
     expect(description).not.toHaveAttribute("tabindex");
   });
 });
+
+describe("SkillCard ranking and install status", () => {
+  it("renders unique rosette SVG medals for top 3 and aligned plain badge for rank 4+", () => {
+    render(
+      <div>
+        <SkillCard
+          skill={{ ...skill, key: "k1", installed: false }}
+          ranking={{
+            rank: 1,
+            platform: "skills.sh",
+            metric: { icon: "award", label: "综合分", value: "81.1" },
+          }}
+          onInstall={vi.fn()}
+        />
+        <SkillCard
+          skill={{ ...skill, key: "k2", installed: false }}
+          ranking={{
+            rank: 2,
+            platform: "skills.sh",
+            metric: { icon: "award", label: "综合分", value: "76.3" },
+          }}
+          onInstall={vi.fn()}
+        />
+        <SkillCard
+          skill={{ ...skill, key: "k4", installed: false }}
+          ranking={{
+            rank: 4,
+            platform: "skills.sh",
+            metric: { icon: "award", label: "综合分", value: "67.3" },
+          }}
+          onInstall={vi.fn()}
+        />
+      </div>,
+    );
+
+    const gold = screen.getByLabelText("#1");
+    const silver = screen.getByLabelText("#2");
+    const fourth = screen.getByLabelText("#4");
+
+    expect(gold.querySelector("svg")).toBeInTheDocument();
+    expect(silver.querySelector("svg")).toBeInTheDocument();
+    expect(fourth.querySelector("svg")).not.toBeInTheDocument();
+    expect(fourth).toHaveTextContent("#4");
+
+    const goldGrad = gold.querySelector("linearGradient")?.id;
+    const silverGrad = silver.querySelector("linearGradient")?.id;
+    expect(goldGrad).toBeTruthy();
+    expect(silverGrad).toBeTruthy();
+    expect(goldGrad).not.toBe(silverGrad);
+
+    expect(gold.closest("div.glass-card")).toHaveClass("border-amber-500/45");
+    expect(screen.getByTitle("综合分 81.1")).toHaveTextContent("综合分81.1");
+  });
+
+  it("shows an honest installed status pill instead of an uninstall button", () => {
+    render(
+      <SkillCard
+        skill={{ ...skill, installed: true }}
+        ranking={{
+          rank: 2,
+          platform: "skills.sh",
+          metric: { icon: "award", label: "综合分", value: "76.3" },
+        }}
+        onInstall={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("skills.installed")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("skills.uninstallInMainPanel"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "skills.uninstall" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "skills.install" }),
+    ).not.toBeInTheDocument();
+  });
+});

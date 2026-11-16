@@ -37,6 +37,7 @@ fn fixture() -> (mskills_lib::AppState, InstalledSkill, std::path::PathBuf) {
         installed_at: 1,
         content_hash: None,
         updated_at: 0,
+        installation_id: "inst-example".into(),
     };
     state.db.save_skill(&skill).unwrap();
     (state, skill, path)

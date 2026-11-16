@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Zap } from "lucide-react";
 import { Portal as TooltipPortal } from "@radix-ui/react-tooltip";
 import {
   Tooltip,
@@ -13,18 +14,8 @@ import type {
   SkillUsageSummary,
 } from "@/lib/api/skills";
 import { APP_ICON_MAP, SKILLS_APP_IDS } from "@/config/appConfig";
-import { skillUsageColor } from "@/lib/skillUsage";
+import { formatTokens, skillUsageColor } from "@/lib/skillUsage";
 import { cn } from "@/lib/utils";
-
-export function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    return `${(tokens / 1_000_000).toFixed(1)}M`;
-  }
-  if (tokens >= 1_000) {
-    return `${(tokens / 1_000).toFixed(1)}k`;
-  }
-  return tokens.toLocaleString();
-}
 
 interface Props {
   records: SkillUsageSummary[];
@@ -170,7 +161,7 @@ export function SkillUsageTrend({
               }));
               const totalLabel =
                 mode === "tokens"
-                  ? `${t("skills.usage.periodTotal", "时段消耗")}: ⚡ ${formatTokens(total)} (${bucketCalls} ${t("skills.usage.times")})`
+                  ? `${t("skills.usage.periodTotal")}: ${formatTokens(total)} (${bucketCalls} ${t("skills.usage.times")})`
                   : t("skills.usage.bucketTotal", {
                       count: total,
                     });
@@ -184,7 +175,7 @@ export function SkillUsageTrend({
                         periodLabel,
                         ...details.map(({ app, count, tokens }) =>
                           mode === "tokens"
-                            ? `${APP_ICON_MAP[app].label} ⚡ ${formatTokens(tokens)} (${count} ${t("skills.usage.times")})`
+                            ? `${APP_ICON_MAP[app].label} ${formatTokens(tokens)} (${count} ${t("skills.usage.times")})`
                             : t("skills.usage.bucketCount", {
                                 app: APP_ICON_MAP[app].label,
                                 count,
@@ -232,133 +223,149 @@ export function SkillUsageTrend({
                     <TooltipContent
                       side="top"
                       sideOffset={6}
-                      className="min-w-40 space-y-1.5 !animate-none"
+                      className="w-[264px] space-y-2 rounded-xl border border-border-default bg-popover p-3 text-popover-foreground shadow-lg !animate-none"
                     >
-                      <p className="font-medium">{periodLabel}</p>
-                      <div className="flex flex-col-reverse gap-1.5">
-                        {details.map(({ app, count, tokens }) => (
-                          <div
-                            key={app}
-                            className="flex items-center justify-between gap-4"
-                          >
-                            <span className="inline-flex items-center gap-1.5">
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  "h-1.5 w-1.5 rounded-full",
-                                  skillUsageColor[app],
-                                )}
-                              />
-                              {APP_ICON_MAP[app].label}
-                            </span>
-                            <span className="tabular-nums">
-                              {mode === "tokens" ? (
-                                <span>
-                                  <span className="font-medium">
-                                    ⚡ {formatTokens(tokens)}
-                                  </span>
-                                  {count > 0 && (
-                                    <span className="text-[10px] text-muted-foreground ml-1">
-                                      ({count} {t("skills.usage.times")})
-                                    </span>
-                                  )}
-                                </span>
-                              ) : (
-                                `${count} ${t("skills.usage.times")}`
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="border-t border-primary-foreground/20 pt-1.5 flex items-center justify-between tabular-nums">
-                        <span>
-                          {mode === "tokens"
-                            ? t("skills.usage.periodTotal", "时段消耗")
-                            : t("skills.usage.totalCalls", "调用合计")}
+                      <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                        <span className="font-semibold text-foreground">
+                          {periodLabel}
                         </span>
-                        <span className="font-medium">
+                        <span className="rounded-full border border-sky-500/25 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-sky-700 dark:text-sky-300">
                           {mode === "tokens"
-                            ? `⚡ ${formatTokens(total)} (${bucketCalls} ${t("skills.usage.times")})`
+                            ? `${formatTokens(total)} · ${bucketCalls} ${t("skills.usage.times")}`
                             : t("skills.usage.bucketTotal", { count: total })}
                         </span>
                       </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        {details.map(
+                          ({ app, count: appBucketCount, tokens }) => {
+                            const isIdle =
+                              mode === "tokens"
+                                ? tokens === 0 && appBucketCount === 0
+                                : appBucketCount === 0;
+                            return (
+                              <div
+                                key={app}
+                                className={cn(
+                                  "flex items-center justify-between gap-4",
+                                  isIdle && "text-muted-foreground/75",
+                                )}
+                              >
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      "h-1.5 w-1.5 rounded-full",
+                                      skillUsageColor[app],
+                                    )}
+                                  />
+                                  {APP_ICON_MAP[app].label}
+                                </span>
+                                <span className="tabular-nums">
+                                  {mode === "tokens" ? (
+                                    <span>
+                                      <span className="font-semibold">
+                                        {formatTokens(tokens)}
+                                      </span>
+                                      {appBucketCount > 0 && (
+                                        <span className="ml-1 text-[10px] text-muted-foreground">
+                                          ({appBucketCount}{" "}
+                                          {t("skills.usage.times")})
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className={cn(!isIdle && "font-semibold")}
+                                    >
+                                      {appBucketCount} {t("skills.usage.times")}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          },
+                        )}
+                      </div>
+
                       {mode === "tokens" &&
                         total > 0 &&
                         (bucketOutput > 0 || bucketInput > 0) && (
-                          <div className="text-[10px] text-muted-foreground/80 pl-1 space-y-0.5">
-                            {bucketOutput > 0 && (
-                              <div className="flex items-center justify-between">
-                                <span>
-                                  ├{" "}
-                                  {t(
-                                    "skills.usage.outputTokens",
-                                    "生成 Output",
-                                  )}
-                                </span>
-                                <span className="tabular-nums">
-                                  {formatTokens(bucketOutput)}
-                                </span>
-                              </div>
-                            )}
-                            {bucketInput > 0 && (
-                              <div className="flex items-center justify-between">
-                                <span>
-                                  ├{" "}
-                                  {t("skills.usage.inputTokens", "输入 Input")}
-                                </span>
-                                <span className="tabular-nums">
-                                  {formatTokens(bucketInput)}
-                                </span>
-                              </div>
-                            )}
+                          <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/60 px-2 py-1 text-[11px] tabular-nums text-muted-foreground">
+                            <span>
+                              {t("skills.usage.periodOutput")}{" "}
+                              <strong className="font-semibold text-foreground">
+                                {formatTokens(bucketOutput)}
+                              </strong>
+                            </span>
+                            <span>
+                              {t("skills.usage.periodInput")}{" "}
+                              <strong className="font-semibold text-foreground">
+                                {formatTokens(bucketInput)}
+                              </strong>
+                            </span>
                           </div>
                         )}
+
                       {totalTokens > 0 && (
-                        <div className="border-t border-primary-foreground/20 pt-1.5 mt-1 text-[11px] space-y-0.5">
-                          <div className="flex items-center justify-between font-medium">
-                            <span className="text-muted-foreground/90">
+                        <div className="space-y-2 rounded-lg border border-border/70 bg-muted/60 px-2.5 py-2 text-[11px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-muted-foreground">
                               {range === "day"
-                                ? t("skills.usage.dayAggregate", "全天累计")
-                                : t("skills.usage.weekAggregate", "7天累计")}
+                                ? t("skills.usage.dayAggregate", { count })
+                                : t("skills.usage.weekAggregate", { count })}
                             </span>
-                            <span className="tabular-nums font-semibold">
-                              ⚡ {formatTokens(totalTokens)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-muted-foreground/80 pl-1 text-[10px]">
-                            <span>
-                              ├ {t("skills.usage.outputTokens", "生成 Output")}
-                            </span>
-                            <span className="tabular-nums">
-                              {formatTokens(outputTokens)}
+                            <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-foreground">
+                              <Zap
+                                className="h-3 w-3 shrink-0 text-amber-500"
+                                aria-hidden="true"
+                              />
+                              {formatTokens(totalTokens)}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between text-muted-foreground/80 pl-1 text-[10px]">
-                            <span>
-                              ├ {t("skills.usage.inputTokens", "输入 Input")}
-                            </span>
-                            <span className="tabular-nums">
-                              {formatTokens(inputTokens)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-muted-foreground/80 pl-1 text-[10px]">
-                            <span>
-                              ├ {t("skills.usage.avgPerRun", "单次均值")}
-                            </span>
-                            <span className="tabular-nums">
-                              ~{formatTokens(avgPerRun)} / 次
-                            </span>
-                          </div>
-                          {docTokens != null && docTokens > 0 && (
-                            <div className="flex items-center justify-between text-muted-foreground/80 pl-1 text-[10px]">
-                              <span>
-                                └ {t("skills.usage.docTokens", "文档基准")}
+
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-muted-foreground">
+                                {t("skills.usage.inputTokens")}
                               </span>
-                              <span className="tabular-nums">
-                                ~{formatTokens(docTokens)} tokens
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {formatTokens(inputTokens)}
                               </span>
                             </div>
-                          )}
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-muted-foreground">
+                                {t("skills.usage.outputTokens")}
+                              </span>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {formatTokens(outputTokens)}
+                              </span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-muted-foreground">
+                                {t("skills.usage.avgPerRun")}
+                              </span>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {t("skills.usage.avgPerCallUnit", {
+                                  value: formatTokens(avgPerRun),
+                                })}
+                              </span>
+                            </div>
+                            {docTokens != null && docTokens > 0 && (
+                              <div className="flex flex-col">
+                                <span className="text-[10px] text-muted-foreground">
+                                  {t("skills.usage.docTokens")}
+                                </span>
+                                <span className="font-semibold tabular-nums text-foreground">
+                                  ~{formatTokens(docTokens)} tokens
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <p className="border-t border-border/50 pt-1.5 text-[10px] leading-snug text-muted-foreground">
+                            {t("skills.usage.tokenScopeHint")}
+                          </p>
                         </div>
                       )}
                     </TooltipContent>
@@ -388,13 +395,20 @@ export function SkillUsageTrend({
         className="flex min-w-12 shrink-0 items-baseline justify-end gap-1 whitespace-nowrap text-xs font-medium tabular-nums"
         aria-live="polite"
       >
-        {unsupported
-          ? "—"
-          : showCount
-            ? mode === "tokens"
-              ? `⚡ ${formatTokens(totalTokens)}`
-              : count
-            : "…"}
+        {unsupported ? (
+          "—"
+        ) : showCount ? (
+          mode === "tokens" ? (
+            <span className="inline-flex items-center gap-1 text-purple-700 dark:text-purple-300">
+              <Zap className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {formatTokens(totalTokens)}
+            </span>
+          ) : (
+            count
+          )
+        ) : (
+          "…"
+        )}
         {showCount && mode !== "tokens" && (
           <span className="text-[10px] font-normal text-muted-foreground">
             {t("skills.usage.times")}

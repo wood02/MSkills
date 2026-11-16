@@ -14,6 +14,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use crate::app_config::{AppType, InstalledSkill, SkillApps, UnmanagedSkill};
 use crate::config::get_app_config_dir;
@@ -617,15 +618,20 @@ impl SkillService {
 
     // ========== 路径管理 ==========
 
-    /// 获取 SSOT 目录（根据设置返回 ~/.mskills/skills/ 或 ~/.agents/skills/）
-    pub fn get_ssot_dir() -> Result<PathBuf> {
+    /// 获取 SSOT 目录路径（不触发目录创建，适用于纯检查或扫描场景）
+    pub fn resolve_ssot_dir_no_create() -> PathBuf {
         let location = crate::settings::get_skill_storage_location();
-        let dir = match location {
+        match location {
             SkillStorageLocation::MSkills => get_app_config_dir().join("skills"),
             SkillStorageLocation::Unified => {
                 crate::config::get_home_dir().join(".agents").join("skills")
             }
-        };
+        }
+    }
+
+    /// 获取 SSOT 目录（根据设置返回 ~/.mskills/skills/ 或 ~/.agents/skills/）
+    pub fn get_ssot_dir() -> Result<PathBuf> {
+        let dir = Self::resolve_ssot_dir_no_create();
         fs::create_dir_all(&dir)?;
         Ok(dir)
     }
@@ -719,7 +725,7 @@ impl SkillService {
         )
     }
 
-    fn paths_overlap(left: &Path, right: &Path) -> bool {
+    pub(crate) fn paths_overlap(left: &Path, right: &Path) -> bool {
         let overlaps = |left: &Path, right: &Path| {
             left == right || left.starts_with(right) || right.starts_with(left)
         };
@@ -999,6 +1005,7 @@ impl SkillService {
 
         let installed_skill = InstalledSkill {
             id: skill.key.clone(),
+            installation_id: Uuid::new_v4().to_string(),
             name: skill.name.clone(),
             description: if skill.description.is_empty() {
                 None
@@ -1237,6 +1244,7 @@ impl SkillService {
         // 从数据库删除
         db.delete_skill(id)?;
 
+        // 记录/警告受影响的项目引用（默认保留拷贝或由用户显式清理软链）
         log::info!(
             "Skill {} 卸载成功{}",
             skill.name,
@@ -1252,6 +1260,75 @@ impl SkillService {
             pi_cleanup_incomplete,
             shared_backup_path,
         })
+    }
+
+    /// 预览卸载全局 Skill 对各已纳管项目的影响（软链将被断开、拷贝将失去全局源）。
+    pub fn preview_skill_uninstall_impact(
+        db: &Arc<Database>,
+        id: &str,
+    ) -> Result<Vec<crate::database::dao::projects::ProjectSkillDeploymentRecord>> {
+        let skill = db
+            .get_installed_skill(id)?
+            .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
+        let deps = db.find_deployments_by_skill(Some(&skill.id), Some(&skill.installation_id))?;
+        Ok(deps
+            .into_iter()
+            .filter(|d| d.detached_at.is_none())
+            .collect())
+    }
+
+    /// 卸载全局 Skill，并可选在删除 SSOT 前安全拆除指向它的项目软链及托管 `.git/info/exclude` 条目。
+    pub fn uninstall_with_options(
+        db: &Arc<Database>,
+        id: &str,
+        unlink_project_symlinks: bool,
+    ) -> Result<SkillUninstallResult> {
+        let impacted = if unlink_project_symlinks {
+            Self::preview_skill_uninstall_impact(db, id)?
+        } else {
+            Vec::new()
+        };
+
+        let result = Self::uninstall(db, id)?;
+
+        if unlink_project_symlinks {
+            let now = Utc::now().timestamp();
+            for mut dep in impacted {
+                if dep.mode == "symlink" {
+                    if let Ok(Some(project)) = db.get_project(&dep.project_id) {
+                        let target_rel = if dep.target == "claude" {
+                            ".claude/skills"
+                        } else {
+                            ".agents/skills"
+                        };
+                        let link_path = Path::new(&project.root_path)
+                            .join(target_rel)
+                            .join(&dep.directory);
+                        if crate::services::project::fs_safety::is_symlink(&link_path) {
+                            let _ =
+                                crate::services::project::fs_safety::remove_path_any(&link_path);
+                        }
+                        if let Some(ref_val) = dep.git_exclude_ref.clone() {
+                            let _ = crate::services::project::git_exclude::release_git_exclude_ref(
+                                db,
+                                &project,
+                                &dep.target,
+                                &dep.directory,
+                                &ref_val,
+                            );
+                            dep.git_exclude_ref = None;
+                        }
+                        let _ = db.delete_project_deployment(&dep.id);
+                        continue;
+                    }
+                }
+                dep.detached_at = Some(now);
+                dep.updated_at = now;
+                let _ = db.save_project_deployment(&dep);
+            }
+        }
+
+        Ok(result)
     }
 
     // ========== 更新检测 ==========
@@ -1670,6 +1747,11 @@ impl SkillService {
 
         let updated_metadata = InstalledSkill {
             id: skill.id.clone(),
+            installation_id: if skill.installation_id.trim().is_empty() {
+                Uuid::new_v4().to_string()
+            } else {
+                skill.installation_id.clone()
+            },
             name: new_name,
             description: new_description,
             directory: skill.directory.clone(),
@@ -1984,6 +2066,57 @@ impl SkillService {
             }
         }
 
+        // 5. 同步迁移指向旧 SSOT 的项目级软链（保持托管边界不变）
+        if let Ok(deployments) = db.list_all_project_deployments() {
+            let now = Utc::now().timestamp();
+            for mut dep in deployments {
+                if dep.detached_at.is_some() || dep.mode != "symlink" {
+                    continue;
+                }
+                let expected_old = old_dir.join(&dep.directory);
+                let points_old = dep
+                    .managed_link_target
+                    .as_deref()
+                    .is_some_and(|t| Self::paths_alias(Path::new(t), &expected_old));
+                if !points_old {
+                    continue;
+                }
+                let new_target = new_dir.join(&dep.directory);
+                if !new_target.is_dir() {
+                    continue;
+                }
+                if let Ok(Some(project)) = db.get_project(&dep.project_id) {
+                    let target_rel = if dep.target == "claude" {
+                        ".claude/skills"
+                    } else {
+                        ".agents/skills"
+                    };
+                    let link_path = Path::new(&project.root_path)
+                        .join(target_rel)
+                        .join(&dep.directory);
+                    if crate::services::project::fs_safety::is_symlink(&link_path) {
+                        if crate::services::project::fs_safety::remove_path_any(&link_path).is_ok()
+                            && crate::services::project::fs_safety::create_dir_symlink(
+                                &new_target,
+                                &link_path,
+                            )
+                            .is_ok()
+                        {
+                            dep.managed_link_target =
+                                Some(new_target.to_string_lossy().to_string());
+                            dep.updated_at = now;
+                            let _ = db.save_project_deployment(&dep);
+                        } else {
+                            result.errors.push(format!(
+                                "更新项目 {} 的 Skill {} 软链失败",
+                                project.name, dep.directory
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         log::info!(
             "Skill 存储迁移完成: {} 迁移, {} 跳过, {} 错误",
             result.migrated_count,
@@ -2090,7 +2223,17 @@ impl SkillService {
             ));
         }
 
+        if !metadata.skill.installation_id.trim().is_empty()
+            && Uuid::parse_str(metadata.skill.installation_id.trim()).is_err()
+        {
+            return Err(anyhow!(
+                "Invalid installation_id in skill backup metadata: {}",
+                metadata.skill.installation_id
+            ));
+        }
+
         let mut restored_skill = metadata.skill;
+        restored_skill.installation_id = Uuid::new_v4().to_string();
         restored_skill.directory = directory;
         restored_skill.installed_at = Utc::now().timestamp();
         restored_skill.apps = SkillApps::only(current_app);
@@ -2351,6 +2494,7 @@ impl SkillService {
         fs::write(dest.join("SKILL.md"), content)?;
         let skill = InstalledSkill {
             id: format!("local:{dir_name}"),
+            installation_id: Uuid::new_v4().to_string(),
             name: dir_name.clone(),
             description: (!description.is_empty()).then(|| description.to_string()),
             directory: dir_name,
@@ -2774,6 +2918,7 @@ impl SkillService {
             // 创建记录
             let skill = InstalledSkill {
                 id,
+                installation_id: Uuid::new_v4().to_string(),
                 name,
                 description,
                 directory: dir_name,
@@ -3080,6 +3225,226 @@ impl SkillService {
         }
 
         Ok(())
+    }
+
+    /// 根据当前数据库记录，幂等刷新一个 Skill 目录已启用的全部全局 App 目录。
+    pub(crate) fn refresh_enabled_app_directories_for_dir(
+        db: &Arc<Database>,
+        directory: &str,
+    ) -> Result<()> {
+        let directory = Self::require_valid_directory(directory)?;
+        let skills = db.get_all_installed_skills()?;
+        let Some(skill) = skills.values().find(|s| s.directory == directory) else {
+            return Ok(());
+        };
+        let ssot_dir = Self::get_ssot_dir()?;
+        let source = ssot_dir.join(&directory);
+        if !source.is_dir() {
+            return Ok(());
+        }
+        for app in skill.apps.enabled_apps() {
+            if matches!(app, AppType::ClaudeDesktop) {
+                continue;
+            }
+            if matches!(app, AppType::Pi | AppType::Mcode) {
+                let app_dir = Self::get_distinct_app_skills_dir(&ssot_dir, &app)?;
+                let dest = app_dir.join(&directory);
+                if dest.exists() || Self::is_symlink(&dest) {
+                    if let Ok(Some(dep)) =
+                        Self::inspect_pi_skill_destination(&source, &dest, &directory)
+                    {
+                        Self::refresh_pi_skill_destination(&source, &dest, &directory, &dep)?;
+                    }
+                } else {
+                    Self::sync_to_app_dir(&directory, &app)?;
+                }
+                continue;
+            }
+            Self::sync_to_app_dir(&directory, &app)?;
+        }
+        Ok(())
+    }
+
+    /// 统一写入全局 SSOT 的安全提交入口（供 Push / Import 共同复用）。
+    ///
+    /// - 执行启动/写前 journal 恢复
+    /// - 对目标目录及所有已支持 App 目标进行 preflight 校验
+    /// - 使用同挂载点私有 staging + `rename_noreplace` 原子切换 SSOT，并将原版本安全备份到完成提交后清理
+    /// - 幂等刷新全局已启用的 App 目录，返回最新 `InstalledSkill` 与树指纹
+    pub(crate) fn commit_skill_to_global_ssot(
+        db: &Arc<Database>,
+        source_dir: &Path,
+        existing_skill_id: Option<&str>,
+        directory: &str,
+        allow_overwrite_existing: bool,
+    ) -> Result<(InstalledSkill, String)> {
+        use crate::services::project::fs_safety::{
+            compute_skill_tree_fingerprint, copy_validated_skill_tree, get_ssot_staging_root,
+            remove_path_any, swap_staged_with_verified_backup, validate_skill_directory_name,
+            validate_skill_tree,
+        };
+        use crate::services::project::journal::{
+            acquire_journal_op_lock, recover_pending_operations_locked, JournalBeginSpec,
+            JournalGuard, JournalPayload,
+        };
+
+        let _state_guard = skill_state_write_guard();
+        let _journal_lock = acquire_journal_op_lock();
+        let _ = recover_pending_operations_locked(db, &_journal_lock)?;
+
+        let directory = validate_skill_directory_name(directory)?;
+        validate_skill_tree(source_dir)?;
+
+        let ssot_dir = Self::get_ssot_dir()?;
+        let dest = ssot_dir.join(&directory);
+
+        let existing = match existing_skill_id {
+            Some(id) => Some(
+                db.get_installed_skill(id)?
+                    .ok_or_else(|| anyhow!("目标全局 Skill 不存在: {id}"))?,
+            ),
+            None => db
+                .get_all_installed_skills()?
+                .into_values()
+                .find(|s| s.directory.eq_ignore_ascii_case(&directory)),
+        };
+
+        if existing.is_some() && !allow_overwrite_existing {
+            return Err(anyhow!("全局 Skill 目录已存在，未确认覆盖: {directory}"));
+        }
+        if existing.is_none()
+            && (dest.exists() || Self::is_symlink(&dest))
+            && !allow_overwrite_existing
+        {
+            return Err(anyhow!(
+                "SSOT 目录中已存在同名 Skill，未授权接管或覆盖: {}",
+                dest.display()
+            ));
+        }
+
+        // Preflight enabled app directories when updating an existing skill
+        if let Some(ref skill) = existing {
+            for app in skill.apps.enabled_apps() {
+                if matches!(app, AppType::ClaudeDesktop) {
+                    continue;
+                }
+                if let Ok(app_dir) = Self::get_distinct_app_skills_dir(&ssot_dir, &app) {
+                    if matches!(app, AppType::Pi | AppType::Mcode) {
+                        let app_dest = app_dir.join(&directory);
+                        if (app_dest.exists() || Self::is_symlink(&app_dest)) && dest.is_dir() {
+                            Self::ensure_pi_skill_destination_matches(
+                                &dest, &app_dest, &directory,
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+
+        let op_nonce = Uuid::new_v4().to_string();
+        let staging_root = get_ssot_staging_root()?;
+        let op_stage_root = staging_root.join(format!("ssot-{op_nonce}"));
+        let staged_skill_dir = op_stage_root.join("new");
+        let backup_skill_dir = op_stage_root.join("bak");
+
+        let new_fingerprint = copy_validated_skill_tree(source_dir, &staged_skill_dir)?;
+        let (name, description) =
+            Self::read_skill_name_desc(&staged_skill_dir.join("SKILL.md"), &directory);
+        let new_content_hash = Self::compute_dir_hash(&staged_skill_dir).ok();
+        let now = Utc::now().timestamp();
+
+        let next_skill = match existing {
+            Some(mut cur) => {
+                if cur.installation_id.trim().is_empty() {
+                    cur.installation_id = Uuid::new_v4().to_string();
+                }
+                cur.name = name;
+                cur.description = description;
+                cur.content_hash = new_content_hash;
+                cur.updated_at = now;
+                cur
+            }
+            None => InstalledSkill {
+                id: format!("local:{directory}"),
+                installation_id: Uuid::new_v4().to_string(),
+                name,
+                description,
+                directory: directory.clone(),
+                repo_owner: None,
+                repo_name: None,
+                repo_branch: None,
+                readme_url: None,
+                apps: SkillApps::default(),
+                installed_at: now,
+                content_hash: new_content_hash,
+                updated_at: now,
+            },
+        };
+
+        let existing_ssot_fp = if dest.is_dir() && !Self::is_symlink(&dest) {
+            compute_skill_tree_fingerprint(&dest).ok()
+        } else {
+            None
+        };
+
+        let mut payload = JournalPayload {
+            extra_swaps: Vec::new(),
+            refresh_app_directories: vec![directory.clone()],
+            remove_paths_on_commit: vec![op_stage_root.to_string_lossy().to_string()],
+        };
+
+        let staged_lossy = staged_skill_dir.to_string_lossy();
+        let backup_lossy = backup_skill_dir.to_string_lossy();
+        let dest_lossy = dest.to_string_lossy();
+        let guard = JournalGuard::begin(
+            db,
+            JournalBeginSpec {
+                op_type: "push_to_global_ssot",
+                skill_id: Some(&next_skill.id),
+                directory: Some(&directory),
+                staging_path: Some(&staged_lossy),
+                backup_path: Some(&backup_lossy),
+                dest_path: Some(&dest_lossy),
+                ..Default::default()
+            },
+            &payload,
+        )?;
+
+        if Self::is_symlink(&dest) {
+            let _ = remove_path_any(&dest);
+        }
+
+        if let Err(err) = swap_staged_with_verified_backup(
+            &staged_skill_dir,
+            &dest,
+            Some(&backup_skill_dir),
+            existing_ssot_fp.as_deref(),
+        ) {
+            let _ = remove_path_any(&op_stage_root);
+            let _ = guard.finish();
+            return Err(err);
+        }
+
+        if let Err(err) = db.save_skill(&next_skill) {
+            let _ = remove_path_any(&dest);
+            if backup_skill_dir.exists() {
+                let _ =
+                    crate::services::project::fs_safety::rename_noreplace(&backup_skill_dir, &dest);
+            }
+            let _ = remove_path_any(&op_stage_root);
+            let _ = guard.finish();
+            return Err(err.into());
+        }
+
+        payload.remove_paths_on_commit = vec![op_stage_root.to_string_lossy().to_string()];
+        guard.mark_committed(Some(&payload))?;
+
+        let refresh_res = Self::refresh_enabled_app_directories_for_dir(db, &directory);
+        let _ = remove_path_any(&op_stage_root);
+        guard.finish()?;
+        refresh_res?;
+
+        Ok((next_skill, new_fingerprint))
     }
 
     /// 复制 Skill 到应用目录（保留用于向后兼容）
@@ -3655,7 +4020,7 @@ impl SkillService {
     /// 只校验、不归一化：`sanitize_install_name` 会 `trim()`，若拿它的返回值替换
     /// 原值，磁盘上真实带空格的目录名就再也 join 不中。所以这里要求归一化结果与
     /// 原值逐字相同，否则一律视为非法。
-    fn require_valid_directory(directory: &str) -> Result<String> {
+    pub(crate) fn require_valid_directory(directory: &str) -> Result<String> {
         match Self::sanitize_install_name(directory) {
             Some(normalized) if normalized == directory => Ok(normalized),
             _ => Err(anyhow!(
@@ -4670,6 +5035,7 @@ impl SkillService {
             // 创建 InstalledSkill 记录
             let skill = InstalledSkill {
                 id: format!("local:{install_name}"),
+                installation_id: Uuid::new_v4().to_string(),
                 name,
                 description,
                 directory: install_name.clone(),
@@ -5141,6 +5507,7 @@ pub fn migrate_skills_to_ssot(db: &Arc<Database>) -> Result<usize> {
 
         let skill = InstalledSkill {
             id,
+            installation_id: Uuid::new_v4().to_string(),
             name,
             description,
             directory,
@@ -7289,6 +7656,7 @@ mod tests {
     fn poisoned_skill(id: &str, directory: &str) -> InstalledSkill {
         InstalledSkill {
             id: id.to_string(),
+            installation_id: Uuid::new_v4().to_string(),
             name: "poisoned".to_string(),
             description: None,
             directory: directory.to_string(),

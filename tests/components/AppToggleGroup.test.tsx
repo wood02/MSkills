@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppToggleGroup } from "@/components/common/AppToggleGroup";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -70,9 +71,59 @@ describe("AppToggleGroup", () => {
       </TooltipProvider>,
     );
 
-    const disabledButton = screen.getByRole("button", { name: "Claude" });
+      const disabledButton = screen.getByRole("button", { name: "Claude" });
     expect(disabledButton).toHaveAttribute("aria-pressed", "false");
     expect(disabledButton).toBeDisabled();
     expect(disabledButton.className).not.toContain("disabled:opacity-");
+  });
+
+  it("prevents inner icon titles from intercepting pointer hover tooltips", () => {
+    render(
+      <TooltipProvider>
+        <AppToggleGroup
+          apps={{ antigravity: true }}
+          appIds={["antigravity"]}
+          onToggle={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const antigravity = screen.getByRole("button", { name: "Antigravity" });
+    expect(antigravity.firstElementChild).toHaveClass("pointer-events-none");
+  });
+
+  it("renders structured usage card, warning state, and footnote in tooltip", async () => {
+    render(
+      <TooltipProvider>
+        <AppToggleGroup
+          apps={{ codex: false }}
+          appIds={["codex"]}
+          onToggle={vi.fn()}
+          usage={{
+            codex: {
+              count: 2,
+              sessions: 1,
+              manualCount: 0,
+              agentCount: 2,
+              tokens: 184200,
+              lastUsed: "2026/11/16 09:20:11",
+              warning: "skills.usage.disabledWithUsage",
+              note: "skills.usage.estimated",
+              label: "2 uses",
+            },
+          }}
+        />
+      </TooltipProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: "Codex" }));
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Codex");
+    expect(tooltip).toHaveTextContent("skills.usage.statusClosed");
+    expect(tooltip).toHaveTextContent("184.2k");
+    expect(tooltip).toHaveTextContent("2026/11/16 09:20:11");
+    expect(tooltip).toHaveTextContent("skills.usage.disabledWithUsage");
+    expect(tooltip).toHaveTextContent("skills.usage.estimated");
   });
 });

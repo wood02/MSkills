@@ -22,7 +22,7 @@ describe("AppCountBar", () => {
           onToggleAll={interactive ? vi.fn() : undefined}
         />,
       );
-      expect(screen.getByText("DSH:")).toBeInTheDocument();
+      expect(screen.getByText("DSH")).toBeInTheDocument();
       if (interactive) {
         expect(
           screen.getByRole("checkbox", {
@@ -145,8 +145,8 @@ describe("AppCountBar", () => {
     });
     expect(mixed).toHaveAttribute("aria-checked", "mixed");
     expect(mixed).toHaveAttribute("data-selection-state", "partial");
-    expect(mixed.querySelectorAll("span")).toHaveLength(2);
-    expect(mixed.querySelector("svg")).not.toBeInTheDocument();
+    expect(mixed.querySelector("[data-app-icon-tile]")).toBeInTheDocument();
+    expect(mixed.lastElementChild?.querySelector("svg")).not.toBeInTheDocument();
     fireEvent.click(mixed);
     expect(onToggleAll).toHaveBeenCalledWith("claude", true);
 
@@ -165,8 +165,8 @@ describe("AppCountBar", () => {
     });
     expect(all).toHaveAttribute("aria-checked", "true");
     expect(all).toHaveAttribute("data-selection-state", "all");
-    expect(all.querySelectorAll("span")).toHaveLength(2);
-    expect(all.querySelector("svg")).not.toBeInTheDocument();
+    expect(all.querySelector("[data-app-icon-tile]")).toBeInTheDocument();
+    expect(all.lastElementChild?.querySelector("svg")).not.toBeInTheDocument();
     fireEvent.click(all);
     expect(onToggleAll).toHaveBeenLastCalledWith("claude", false);
   });
@@ -188,8 +188,8 @@ describe("AppCountBar", () => {
     });
     expect(none).toHaveAttribute("aria-checked", "false");
     expect(none).toHaveAttribute("data-selection-state", "none");
-    expect(none.querySelectorAll("span")).toHaveLength(2);
-    expect(none.querySelector("svg")).not.toBeInTheDocument();
+    expect(none.querySelector("[data-app-icon-tile]")).toBeInTheDocument();
+    expect(none.lastElementChild?.querySelector("svg")).not.toBeInTheDocument();
 
     fireEvent.click(none);
     expect(onToggleAll).toHaveBeenCalledWith("claude", true);
@@ -229,8 +229,12 @@ describe("AppCountBar", () => {
       name: "common.enableAllForApp:Claude",
     });
     expect(pendingControl).toHaveAttribute("aria-busy", "true");
-    expect(pendingControl.querySelectorAll("span")).toHaveLength(2);
-    expect(pendingControl.querySelector("svg")).not.toBeInTheDocument();
+    expect(
+      pendingControl.querySelector("[data-app-icon-tile]"),
+    ).toBeInTheDocument();
+    expect(
+      pendingControl.lastElementChild?.querySelector("svg"),
+    ).not.toBeInTheDocument();
   });
 
   it("supports disabling bulk controls during another management write", () => {
@@ -281,5 +285,32 @@ describe("AppCountBar", () => {
       "focus-visible:outline-none",
       "focus-visible:ring-2",
     );
+  });
+
+  it("dims idle zero-count pills and styles Antigravity distinctly from Codex", () => {
+    render(
+      <AppCountBar
+        totalLabel=""
+        leading={<span>range</span>}
+        appIds={["codex", "antigravity", "dsh"]}
+        counts={{ codex: 2, antigravity: 1, dsh: 0 }}
+        totalCount={3}
+        onToggleAll={vi.fn()}
+      />,
+    );
+
+    const codex = screen.getByRole("checkbox", {
+      name: "common.enableAllForApp:Codex",
+    });
+    const antigravity = screen.getByRole("checkbox", {
+      name: "common.enableAllForApp:Antigravity",
+    });
+    const dsh = screen.getByRole("checkbox", {
+      name: "common.enableAllForApp:DeepSeek Harness",
+    });
+
+    expect(codex).toHaveClass("bg-blue-500/10");
+    expect(antigravity).toHaveClass("bg-antigravity-gradient-ring");
+    expect(dsh).toHaveClass("bg-muted/65", "text-muted-foreground");
   });
 });

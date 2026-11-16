@@ -84,10 +84,11 @@ impl Database {
             PRIMARY KEY (id, app_type)
         )", []).map_err(|e| AppError::Database(e.to_string()))?;
 
-        // 5. Skills 表（v3.10.0+ 统一结构）
+        // 5. Skills 表（v3.10.0+ 统一结构，v28 增加 installation_id）
         conn.execute(
             "CREATE TABLE IF NOT EXISTS skills (
             id TEXT PRIMARY KEY,
+            installation_id TEXT,
             name TEXT NOT NULL,
             description TEXT,
             directory TEXT NOT NULL,
@@ -454,6 +455,123 @@ impl Database {
             [],
         );
 
+        // 21-24. 项目级 Skills & Rules 工作区表（本机专属，不参与云同步）
+        Self::create_project_workspace_tables(conn)?;
+        if Self::has_column(conn, "skills", "installation_id")? {
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_installation_id
+                 ON skills(installation_id)
+                 WHERE installation_id IS NOT NULL AND installation_id != ''",
+                [],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    fn create_project_workspace_tables(conn: &Connection) -> Result<(), AppError> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                root_path TEXT NOT NULL UNIQUE,
+                fs_identity TEXT,
+                default_mode TEXT NOT NULL DEFAULT 'copy',
+                enabled_targets TEXT NOT NULL DEFAULT '[\"agents\"]',
+                auto_git_exclude INTEGER NOT NULL DEFAULT 0,
+                archived_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS project_skill_deployments (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                target TEXT NOT NULL,
+                directory TEXT NOT NULL,
+                skill_id TEXT,
+                skill_installation_id TEXT,
+                mode TEXT NOT NULL,
+                managed_link_target TEXT,
+                deployed_hash TEXT,
+                last_materialized_hash TEXT,
+                baseline_source TEXT,
+                git_exclude_ref TEXT,
+                deployed_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                detached_at INTEGER,
+                UNIQUE(project_id, target, directory)
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_skill_deployments_project
+             ON project_skill_deployments(project_id)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_skill_deployments_skill
+             ON project_skill_deployments(skill_id, skill_installation_id)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_skill_deployments_git_exclude
+             ON project_skill_deployments(git_exclude_ref)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS project_rule_snapshots (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                file_existed INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT,
+                prompt_id TEXT,
+                action TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_rule_snapshots_lookup
+             ON project_rule_snapshots(project_id, relative_path, created_at DESC)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS skill_operation_journal (
+                op_id TEXT PRIMARY KEY,
+                op_type TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                skill_id TEXT,
+                project_id TEXT,
+                target TEXT,
+                directory TEXT,
+                staging_path TEXT,
+                backup_path TEXT,
+                dest_path TEXT,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
         Ok(())
     }
 
@@ -692,6 +810,70 @@ impl Database {
                             )?;
                         }
                         Self::set_user_version(conn, 27)?;
+                    }
+                    27 => {
+                        log::info!(
+                            "迁移数据库从 v27 到 v28（Skill installation_id 与项目级工作区本机表）"
+                        );
+                        if Self::table_exists(conn, "skills")? {
+                            Self::add_column_if_missing(conn, "skills", "installation_id", "TEXT")?;
+
+                            let existing_rows = {
+                                let mut stmt = conn
+                                    .prepare(
+                                        "SELECT id, installation_id FROM skills ORDER BY rowid ASC",
+                                    )
+                                    .map_err(|e| AppError::Database(e.to_string()))?;
+                                let iter = stmt
+                                    .query_map([], |row| {
+                                        Ok((
+                                            row.get::<_, String>(0)?,
+                                            row.get::<_, Option<String>>(1)?,
+                                        ))
+                                    })
+                                    .map_err(|e| AppError::Database(e.to_string()))?;
+                                let mut rows = Vec::new();
+                                for row in iter {
+                                    rows.push(row.map_err(|e| AppError::Database(e.to_string()))?);
+                                }
+                                rows
+                            };
+
+                            let mut seen = std::collections::HashSet::new();
+                            for (skill_id, current_inst_id) in existing_rows {
+                                let valid_existing = current_inst_id
+                                    .as_deref()
+                                    .map(str::trim)
+                                    .filter(|s| !s.is_empty() && uuid::Uuid::parse_str(s).is_ok())
+                                    .map(str::to_string);
+                                let final_id = match valid_existing {
+                                    Some(existing) if seen.insert(existing.clone()) => existing,
+                                    _ => loop {
+                                        let candidate = uuid::Uuid::new_v4().to_string();
+                                        if seen.insert(candidate.clone()) {
+                                            break candidate;
+                                        }
+                                    },
+                                };
+                                if current_inst_id.as_deref() != Some(final_id.as_str()) {
+                                    conn.execute(
+                                        "UPDATE skills SET installation_id = ?1 WHERE id = ?2",
+                                        rusqlite::params![final_id, skill_id],
+                                    )
+                                    .map_err(|e| AppError::Database(e.to_string()))?;
+                                }
+                            }
+
+                            conn.execute(
+                                "CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_installation_id
+                                 ON skills(installation_id)
+                                 WHERE installation_id IS NOT NULL AND installation_id != ''",
+                                [],
+                            )
+                            .map_err(|e| AppError::Database(e.to_string()))?;
+                        }
+                        Self::create_project_workspace_tables(conn)?;
+                        Self::set_user_version(conn, 28)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(

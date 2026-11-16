@@ -291,6 +291,24 @@ export const skillsApi = {
     return await invoke("uninstall_skill_unified", { id });
   },
 
+  /** 预览卸载全局 Skill 对各项目部署的影响 */
+  async previewUninstallImpact(
+    id: string,
+  ): Promise<import("./projects").ProjectSkillDeploymentRecord[]> {
+    return await invoke("preview_skill_uninstall_impact", { id });
+  },
+
+  /** 带项目软链安全拆除选项的全局卸载 */
+  async uninstallWithOptions(
+    id: string,
+    unlinkProjectSymlinks = false,
+  ): Promise<SkillUninstallResult> {
+    return await invoke("uninstall_skill_with_options", {
+      id,
+      unlinkProjectSymlinks,
+    });
+  },
+
   /** 从备份恢复 Skill */
   async restoreBackup(
     backupId: string,

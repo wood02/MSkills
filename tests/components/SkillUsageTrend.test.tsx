@@ -131,7 +131,7 @@ describe("SkillUsageTrend", () => {
     const claudeRow = within(details).getByText("Claude").closest("div");
     const codexRow = within(details).getByText("Codex").closest("div");
     expect(claudeRow).toHaveTextContent("3 skills.usage.times");
-    expect(claudeRow?.parentElement).toHaveClass("flex-col-reverse");
+    expect(claudeRow?.parentElement).toHaveClass("flex-col");
     expect(claudeRow?.nextElementSibling).toBe(codexRow);
     expect(details).toHaveTextContent("skills.usage.bucketTotal");
     await user.unhover(buckets[0]);
@@ -179,15 +179,24 @@ describe("SkillUsageTrend", () => {
     );
 
     const trend = screen.getByTestId("skill-usage-trend");
-    expect(trend).toHaveTextContent("⚡ 145.0k");
+    expect(trend).toHaveTextContent("145.0k");
 
     const user = userEvent.setup();
     const buckets = within(trend).getAllByRole("button");
     await user.hover(buckets[0]);
     const details = await screen.findByRole("tooltip");
+    const tooltipSurface = details.closest("[data-side]") ?? details.parentElement;
+    expect(tooltipSurface).toHaveClass(
+      "bg-popover",
+      "text-popover-foreground",
+    );
+    expect(tooltipSurface).not.toHaveClass("bg-primary");
     expect(details).toHaveTextContent("145.0k");
     expect(details).toHaveTextContent("25.0k");
     expect(details).toHaveTextContent("120.0k");
     expect(details).toHaveTextContent("~1.4k tokens");
+    expect(
+      within(trend).getByText("145.0k").closest("span"),
+    ).toHaveClass("text-purple-700");
   });
 });

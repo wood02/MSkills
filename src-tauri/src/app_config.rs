@@ -251,6 +251,9 @@ impl SkillApps {
 pub struct InstalledSkill {
     /// 唯一标识符（格式："owner/repo:directory" 或 "local:directory"）
     pub id: String,
+    /// 本机唯一安装实例标识（UUIDv4，区分卸载/重装后的不同代数）
+    #[serde(default)]
+    pub installation_id: String,
     /// 显示名称
     pub name: String,
     /// 描述

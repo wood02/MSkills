@@ -70,7 +70,18 @@ pub async fn import_config_from_file(
             if let Some(msg) = warning.as_ref() {
                 log::warn!("[Import] post-import sync warning: {msg}");
             }
-            Ok::<_, AppError>(success_payload_with_warning(backup_id, warning))
+            let mut payload = success_payload_with_warning(backup_id, warning);
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert(
+                    "restoreScope".to_string(),
+                    json!(crate::database::backup::RESTORE_SCOPE_DATABASE_CONFIG_ONLY),
+                );
+                obj.insert(
+                    "warnings".to_string(),
+                    json!(Database::database_only_restore_warnings()),
+                );
+            }
+            Ok::<_, AppError>(payload)
         })
     })
     .await
@@ -188,6 +199,39 @@ pub async fn restore_db_backup(
                 log::warn!("[Restore] post-import sync warning: {message}");
             }
             Ok::<_, AppError>(restored)
+        })
+    })
+    .await
+    .map_err(|e| format!("Restore failed: {e}"))?
+    .map_err(|e: AppError| e.to_string())
+}
+
+/// Restore database from a backup file with structured scope & warning metadata.
+#[tauri::command]
+pub async fn restore_db_backup_with_report(
+    state: State<'_, AppState>,
+    filename: String,
+) -> Result<Value, String> {
+    let app_state_for_sync = state.inner().clone();
+    let db = app_state_for_sync.db.clone();
+    run_with_database_restore_lock(move || {
+        tauri::async_runtime::spawn_blocking(move || {
+            let report = {
+                let _skill_state_guard = skill_state_write_guard();
+                db.restore_from_backup_with_report(&filename)?
+            };
+            let warning =
+                post_sync_warning_from_result(Ok(run_post_import_sync(&app_state_for_sync)));
+            let mut warnings = report.warnings;
+            if let Some(message) = warning {
+                log::warn!("[Restore] post-import sync warning: {message}");
+                warnings.push(message);
+            }
+            Ok::<_, AppError>(json!({
+                "safetyBackupId": report.backup_id,
+                "restoreScope": report.restore_scope,
+                "warnings": warnings,
+            }))
         })
     })
     .await
