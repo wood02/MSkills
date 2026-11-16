@@ -102,13 +102,21 @@ export function useImportExport(
       void onImportSuccess?.();
 
       const syncResult = await syncCurrentProvidersLiveSafe();
+      const warningText =
+        result.warnings && result.warnings.length > 0
+          ? result.warnings.join("\n")
+          : undefined;
       if (syncResult.ok) {
         setStatus("success");
         toast.success(
           t("settings.importSuccess", {
             defaultValue: "配置导入成功",
           }),
-          { closeButton: true },
+          {
+            description: warningText,
+            duration: warningText ? 9000 : undefined,
+            closeButton: true,
+          },
         );
       } else {
         console.error(

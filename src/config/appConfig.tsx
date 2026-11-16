@@ -122,7 +122,7 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
     activeClass:
       "bg-orange-500/10 ring-1 ring-orange-500/20 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400",
     badgeClass:
-      "bg-orange-500/10 text-orange-700 dark:text-orange-300 hover:bg-orange-500/20 border-0 gap-1.5",
+      "border-orange-500/25 bg-orange-500/10 text-orange-700 dark:text-orange-300 hover:bg-orange-500/15 gap-1.5",
   },
   "claude-desktop": {
     label: "Claude Desktop",
@@ -130,7 +130,7 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
     activeClass:
       "bg-amber-500/10 ring-1 ring-amber-500/20 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300",
     badgeClass:
-      "bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 border-0 gap-1.5",
+      "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 gap-1.5",
   },
   codex: {
     label: "Codex",
@@ -138,7 +138,7 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
     activeClass:
       "bg-blue-500/10 ring-1 ring-blue-500/20 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400",
     badgeClass:
-      "bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 border-0 gap-1.5",
+      "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/15 gap-1.5",
   },
   gemini: {
     label: "Gemini",
@@ -146,7 +146,7 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
     activeClass:
       "bg-blue-500/10 ring-1 ring-blue-500/20 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400",
     badgeClass:
-      "bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 border-0 gap-1.5",
+      "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/15 gap-1.5",
   },
   antigravity: {
     label: "Antigravity",
@@ -154,7 +154,7 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
     activeClass:
       "bg-antigravity-gradient-ring ring-1 ring-blue-500/25 hover:ring-blue-500/40 text-blue-600 dark:text-blue-400",
     badgeClass:
-      "bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 border-0 gap-1.5",
+      "bg-antigravity-gradient-ring border-emerald-500/30 text-foreground hover:border-blue-500/45 gap-1.5",
   },
   grokbuild: {
     label: "Grok Build",

@@ -12,6 +12,7 @@ use crate::error::AppError;
 use crate::services::skill::SkillRepo;
 use indexmap::IndexMap;
 use rusqlite::params;
+use uuid::Uuid;
 
 impl Database {
     // ========== InstalledSkill CRUD ==========
@@ -21,7 +22,7 @@ impl Database {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, description, directory, repo_owner, repo_name, repo_branch,
+                "SELECT id, installation_id, name, description, directory, repo_owner, repo_name, repo_branch,
                         readme_url, enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild,
                         enabled_opencode, enabled_hermes, installed_at, content_hash, updated_at, enabled_mcode, enabled_dsh, enabled_antigravity
                  FROM skills ORDER BY name ASC",
@@ -32,28 +33,29 @@ impl Database {
             .query_map([], |row| {
                 Ok(InstalledSkill {
                     id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    directory: row.get(3)?,
-                    repo_owner: row.get(4)?,
-                    repo_name: row.get(5)?,
-                    repo_branch: row.get(6)?,
-                    readme_url: row.get(7)?,
+                    installation_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    directory: row.get(4)?,
+                    repo_owner: row.get(5)?,
+                    repo_name: row.get(6)?,
+                    repo_branch: row.get(7)?,
+                    readme_url: row.get(8)?,
                     apps: SkillApps {
-                        claude: row.get(8)?,
-                        codex: row.get(9)?,
-                        gemini: row.get(10)?,
-                        antigravity: row.get(19)?,
-                        grokbuild: row.get(11)?,
-                        opencode: row.get(12)?,
-                        hermes: row.get(13)?,
+                        claude: row.get(9)?,
+                        codex: row.get(10)?,
+                        gemini: row.get(11)?,
+                        antigravity: row.get(20)?,
+                        grokbuild: row.get(12)?,
+                        opencode: row.get(13)?,
+                        hermes: row.get(14)?,
                         pi: false,
-                        mcode: row.get(17)?,
-                        dsh: row.get(18)?,
+                        mcode: row.get(18)?,
+                        dsh: row.get(19)?,
                     },
-                    installed_at: row.get(14)?,
-                    content_hash: row.get(15)?,
-                    updated_at: row.get::<_, i64>(16).unwrap_or(0),
+                    installed_at: row.get(15)?,
+                    content_hash: row.get(16)?,
+                    updated_at: row.get::<_, i64>(17).unwrap_or(0),
                 })
             })
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -71,7 +73,7 @@ impl Database {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, description, directory, repo_owner, repo_name, repo_branch,
+                "SELECT id, installation_id, name, description, directory, repo_owner, repo_name, repo_branch,
                         readme_url, enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild,
                         enabled_opencode, enabled_hermes, installed_at, content_hash, updated_at, enabled_mcode, enabled_dsh, enabled_antigravity
                  FROM skills WHERE id = ?1",
@@ -81,28 +83,29 @@ impl Database {
         let result = stmt.query_row([id], |row| {
             Ok(InstalledSkill {
                 id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                directory: row.get(3)?,
-                repo_owner: row.get(4)?,
-                repo_name: row.get(5)?,
-                repo_branch: row.get(6)?,
-                readme_url: row.get(7)?,
+                installation_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                name: row.get(2)?,
+                description: row.get(3)?,
+                directory: row.get(4)?,
+                repo_owner: row.get(5)?,
+                repo_name: row.get(6)?,
+                repo_branch: row.get(7)?,
+                readme_url: row.get(8)?,
                 apps: SkillApps {
-                    claude: row.get(8)?,
-                    codex: row.get(9)?,
-                    gemini: row.get(10)?,
-                    antigravity: row.get(19)?,
-                    grokbuild: row.get(11)?,
-                    opencode: row.get(12)?,
-                    hermes: row.get(13)?,
+                    claude: row.get(9)?,
+                    codex: row.get(10)?,
+                    gemini: row.get(11)?,
+                    antigravity: row.get(20)?,
+                    grokbuild: row.get(12)?,
+                    opencode: row.get(13)?,
+                    hermes: row.get(14)?,
                     pi: false,
-                    mcode: row.get(17)?,
-                    dsh: row.get(18)?,
+                    mcode: row.get(18)?,
+                    dsh: row.get(19)?,
                 },
-                installed_at: row.get(14)?,
-                content_hash: row.get(15)?,
-                updated_at: row.get::<_, i64>(16).unwrap_or(0),
+                installed_at: row.get(15)?,
+                content_hash: row.get(16)?,
+                updated_at: row.get::<_, i64>(17).unwrap_or(0),
             })
         });
 
@@ -115,15 +118,21 @@ impl Database {
 
     /// 保存 Skill（添加或更新）
     pub fn save_skill(&self, skill: &InstalledSkill) -> Result<(), AppError> {
+        let installation_id = if skill.installation_id.trim().is_empty() {
+            Uuid::new_v4().to_string()
+        } else {
+            skill.installation_id.clone()
+        };
         let conn = lock_conn!(self.conn);
         conn.execute(
             "INSERT OR REPLACE INTO skills
-             (id, name, description, directory, repo_owner, repo_name, repo_branch,
+             (id, installation_id, name, description, directory, repo_owner, repo_name, repo_branch,
               readme_url, enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild, enabled_opencode, enabled_hermes,
               installed_at, content_hash, updated_at, enabled_mcode, enabled_dsh, enabled_antigravity)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 skill.id,
+                installation_id,
                 skill.name,
                 skill.description,
                 skill.directory,
@@ -156,10 +165,16 @@ impl Database {
     /// `enabled_*` 字段，并在记录已被删除时停止后续处理。
     pub fn update_skill_metadata(&self, skill: &InstalledSkill) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
+        let installation_id = if skill.installation_id.trim().is_empty() {
+            None
+        } else {
+            Some(skill.installation_id.as_str())
+        };
         let affected = conn
             .execute(
                 "UPDATE skills
-                 SET name = ?1,
+                 SET installation_id = COALESCE(?13, installation_id),
+                     name = ?1,
                      description = ?2,
                      directory = ?3,
                      repo_owner = ?4,
@@ -183,6 +198,7 @@ impl Database {
                     skill.updated_at,
                     skill.id,
                     skill.installed_at,
+                    installation_id,
                 ],
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -330,6 +346,7 @@ mod tests {
     fn skill(id: &str, name: &str, apps: SkillApps) -> InstalledSkill {
         InstalledSkill {
             id: id.to_string(),
+            installation_id: format!("inst-{id}"),
             name: name.to_string(),
             description: Some(format!("{name} description")),
             directory: format!("{name}-directory"),

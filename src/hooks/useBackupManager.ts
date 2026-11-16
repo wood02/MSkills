@@ -19,7 +19,8 @@ export function useBackupManager() {
   });
 
   const restoreMutation = useMutation({
-    mutationFn: (filename: string) => backupsApi.restoreDbBackup(filename),
+    mutationFn: (filename: string) =>
+      backupsApi.restoreDbBackupWithReport(filename),
     onSuccess: async () => {
       // Invalidate all queries to refresh data from restored database
       await queryClient.invalidateQueries();

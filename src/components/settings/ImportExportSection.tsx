@@ -51,6 +51,9 @@ export function ImportExportSection({
         <p className="text-sm text-muted-foreground">
           {t("settings.importExportHint")}
         </p>
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          {t("settings.dbOnlyScopeHint")}
+        </p>
       </header>
 
       <div className="space-y-4 rounded-lg border border-border bg-muted/40 p-6">

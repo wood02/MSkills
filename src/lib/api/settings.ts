@@ -12,6 +12,14 @@ export interface ConfigTransferResult {
   message: string;
   filePath?: string;
   backupId?: string;
+  restoreScope?: string;
+  warnings?: string[];
+}
+
+export interface DatabaseRestoreReport {
+  safetyBackupId: string;
+  restoreScope: string;
+  warnings: string[];
 }
 
 export interface WebDavTestResult {
@@ -376,6 +384,12 @@ export const backupsApi = {
 
   async restoreDbBackup(filename: string): Promise<string> {
     return await invoke("restore_db_backup", { filename });
+  },
+
+  async restoreDbBackupWithReport(
+    filename: string,
+  ): Promise<DatabaseRestoreReport> {
+    return await invoke("restore_db_backup_with_report", { filename });
   },
 
   async renameDbBackup(oldFilename: string, newName: string): Promise<string> {

@@ -27,6 +27,7 @@ import {
   Loader2,
   RefreshCw,
   ChevronDown,
+  FolderGit2,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Provider, VisibleApps } from "@/types";
@@ -108,6 +109,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
+import { ProjectsPage } from "@/components/projects/ProjectsPage";
 import {
   useDisableCurrentOmo,
   useDisableCurrentOmoSlim,
@@ -131,6 +133,7 @@ type View =
   | "settings"
   | "prompts"
   | "skills"
+  | "projects"
   | "skillsDiscovery"
   | "mcp"
   | "agents"
@@ -167,6 +170,7 @@ const VALID_VIEWS: View[] = [
   "settings",
   "prompts",
   "skills",
+  "projects",
   "skillsDiscovery",
   "mcp",
   "agents",
@@ -187,8 +191,8 @@ const getInitialView = (): View => {
   return "skills";
 };
 
-// 供应商管理已移除：这四个视图作为顶部常驻导航，技能页为首页
-const MAIN_VIEWS: View[] = ["skills", "mcp", "prompts", "sessions"];
+// 供应商管理已移除：这五个视图作为顶部常驻导航，技能页为首页
+const MAIN_VIEWS: View[] = ["skills", "projects", "mcp", "prompts", "sessions"];
 
 function App() {
   const { t } = useTranslation();
@@ -1163,6 +1167,8 @@ function App() {
               appId={sharedFeatureApp}
             />
           );
+        case "projects":
+          return <ProjectsPage />;
         case "workspace":
           return <WorkspaceFilesPanel />;
         case "openclawEnv":
@@ -1388,6 +1394,7 @@ function App() {
                       appName: t(`apps.${sharedFeatureApp}`),
                     })}
                   {currentView === "skills" && t("skills.title")}
+                  {currentView === "projects" && t("projects.title")}
                   {currentView === "skillsDiscovery" && t("skills.title")}
                   {currentView === "mcp" && t("mcp.unifiedPanel.title")}
                   {currentView === "agents" && t("agents.title")}
@@ -1878,6 +1885,11 @@ function App() {
                         "skills",
                         skillsButtonTitle,
                         <Sparkles key="i" className="w-4 h-4" />,
+                      ],
+                      [
+                        "projects",
+                        t("projects.title"),
+                        <FolderGit2 key="i" className="w-4 h-4" />,
                       ],
                       ["mcp", t("mcp.title"), <McpIcon key="i" size={16} />],
                       [

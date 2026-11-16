@@ -142,8 +142,19 @@ export function useInstallSkill() {
 export function useUninstallSkill() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => skillsApi.uninstallUnified(id),
-    onSuccess: (_result, id) => {
+    mutationFn: (
+      input: string | { id: string; unlinkProjectSymlinks?: boolean },
+    ) => {
+      if (typeof input === "string") {
+        return skillsApi.uninstallUnified(input);
+      }
+      return skillsApi.uninstallWithOptions(
+        input.id,
+        input.unlinkProjectSymlinks ?? false,
+      );
+    },
+    onSuccess: (_result, input) => {
+      const id = typeof input === "string" ? input : input.id;
       // 直接更新 installed 缓存，移除该 skill
       queryClient.setQueryData<InstalledSkill[]>(
         ["skills", "installed"],
@@ -159,6 +170,8 @@ export function useUninstallSkill() {
         ["skills", "updates"],
         (oldData) => oldData?.filter((update) => update.id !== id),
       );
+
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
     // Uninstall creates a backup before removing SSOT/DB state. It may reject
     // after that backup exists, and best-effort app cleanup can also leave an

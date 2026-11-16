@@ -87,17 +87,21 @@ export function BackupListSection({
   const handleRestore = async () => {
     if (!confirmFilename) return;
     try {
-      const safetyId = await restore(confirmFilename);
+      const report = await restore(confirmFilename);
       setConfirmFilename(null);
+      const idLine = report.safetyBackupId
+        ? `${t("settings.backupManager.safetyBackupId", { defaultValue: "Safety Backup ID" })}: ${report.safetyBackupId}`
+        : "";
+      const warningLines =
+        report.warnings.length > 0 ? report.warnings.join("\n") : "";
+      const description = [idLine, warningLines].filter(Boolean).join("\n");
       toast.success(
         t("settings.backupManager.restoreSuccess", {
           defaultValue: "Restore successful! Safety backup created",
         }),
         {
-          description: safetyId
-            ? `${t("settings.backupManager.safetyBackupId", { defaultValue: "Safety Backup ID" })}: ${safetyId}`
-            : undefined,
-          duration: 6000,
+          description: description || undefined,
+          duration: report.warnings.length > 0 ? 9000 : 6000,
           closeButton: true,
         },
       );

@@ -18,7 +18,8 @@ use crate::services::skill::{skill_state_read_guard, skill_state_write_guard};
 
 // Re-export archive functions for use by transport layers.
 pub(crate) use super::webdav_sync::archive::{
-    backup_current_skills, restore_skills_from_backup, restore_skills_zip, zip_skills_ssot,
+    backup_current_skills, restore_skills_from_backup, restore_skills_zip_verified,
+    zip_skills_ssot_with_manifest,
 };
 
 // ─── Protocol constants ──────────────────────────────────────
@@ -27,7 +28,8 @@ pub(crate) use super::webdav_sync::archive::{
 /// New snapshots use MSkills; the reader also accepts the legacy wire identifier.
 pub(crate) const PROTOCOL_FORMAT: &str = "mskills-webdav-sync";
 pub(crate) const PROTOCOL_VERSION: u32 = 2;
-pub(crate) const DB_COMPAT_VERSION: u32 = 6;
+pub(crate) const DB_COMPAT_VERSION: u32 = 7;
+pub(crate) const LEGACY_DB_COMPAT_VERSION_6: u32 = 6;
 pub(crate) const LEGACY_DB_COMPAT_VERSION: u32 = 5;
 pub(crate) const REMOTE_DB_SQL: &str = "db.sql";
 pub(crate) const REMOTE_SKILLS_ZIP: &str = "skills.zip";
@@ -156,8 +158,9 @@ pub(crate) fn build_local_snapshot(
     // Export database to SQL string
     let sql_string = db.export_sql_string_for_sync()?;
     let db_sql = sql_string.into_bytes();
+    let installed_skills: Vec<_> = db.get_all_installed_skills()?.into_values().collect();
 
-    // Pack skills into deterministic ZIP
+    // Pack skills into deterministic ZIP with integrity & installation_id manifest
     let tmp = tempdir().map_err(|e| {
         io_context_localized(
             "sync.snapshot_tmpdir_failed",
@@ -167,7 +170,7 @@ pub(crate) fn build_local_snapshot(
         )
     })?;
     let skills_zip_path = tmp.path().join(REMOTE_SKILLS_ZIP);
-    zip_skills_ssot(&skills_zip_path)?;
+    zip_skills_ssot_with_manifest(&skills_zip_path, &installed_skills)?;
     let skills_zip = fs::read(&skills_zip_path).map_err(|e| AppError::io(&skills_zip_path, e))?;
 
     // Build artifact map and compute hashes
@@ -266,14 +269,16 @@ pub(crate) fn validate_manifest_compat(
         ));
     };
     match layout {
-        RemoteLayout::Current if db_compat_version != DB_COMPAT_VERSION => {
+        RemoteLayout::Current
+            if !(LEGACY_DB_COMPAT_VERSION_6..=DB_COMPAT_VERSION).contains(&db_compat_version) =>
+        {
             return Err(localized(
                 "sync.manifest_db_version_incompatible",
                 format!(
-                    "远端数据库快照版本不兼容: db-v{db_compat_version} (本地 db-v{DB_COMPAT_VERSION})"
+                    "远端数据库快照版本不兼容: db-v{db_compat_version} (本地支持 db-v{LEGACY_DB_COMPAT_VERSION_6}..db-v{DB_COMPAT_VERSION})"
                 ),
                 format!(
-                    "Remote database snapshot version is incompatible: db-v{db_compat_version} (local db-v{DB_COMPAT_VERSION})"
+                    "Remote database snapshot version is incompatible: db-v{db_compat_version} (local supports db-v{LEGACY_DB_COMPAT_VERSION_6}..db-v{DB_COMPAT_VERSION})"
                 ),
             ));
         }
@@ -366,13 +371,13 @@ pub(crate) fn apply_snapshot(
             format!("SQL is not valid UTF-8: {e}"),
         )
     })?;
-    // Exclude installs, uninstalls, updates, and local projection while Skills
-    // are backed up/replaced and the corresponding database snapshot is applied.
+    // Pre-validate DB SQL & extract expected skills list before touching local SSOT.
+    let incoming_skills = db.preview_skills_from_sql_for_sync(sql_str)?;
     let _skill_state_guard = skill_state_write_guard();
     let skills_backup = backup_current_skills()?;
 
-    // Replace skills first, then import database; roll back skills on DB failure.
-    restore_skills_zip(skills_zip)?;
+    // Verify package structure, hidden files/empty dirs preservation, and installation_ids.
+    restore_skills_zip_verified(skills_zip, Some(&incoming_skills))?;
 
     if let Err(db_err) = db.import_sql_string_for_sync(sql_str) {
         if let Err(rollback_err) = restore_skills_from_backup(&skills_backup) {
@@ -385,6 +390,45 @@ pub(crate) fn apply_snapshot(
             ));
         }
         return Err(db_err);
+    }
+
+    // Reconcile local project_skill_deployments against newly synced global skills:
+    // detach/cleanup symlinks pointing into removed/replaced installation_ids.
+    let new_skills = db.get_all_installed_skills()?;
+    let active_install_ids: std::collections::HashSet<&str> = new_skills
+        .values()
+        .map(|s| s.installation_id.as_str())
+        .filter(|id| !id.is_empty())
+        .collect();
+    if let Ok(deployments) = db.list_all_project_deployments() {
+        let now = Utc::now().timestamp();
+        for mut dep in deployments {
+            let missing_inst = dep
+                .skill_installation_id
+                .as_deref()
+                .is_some_and(|id| !active_install_ids.contains(id));
+            if missing_inst && dep.detached_at.is_none() {
+                if dep.mode == "symlink" {
+                    if let Ok(Some(proj)) = db.get_project(&dep.project_id) {
+                        let target_rel = if dep.target == "claude" {
+                            ".claude/skills"
+                        } else {
+                            ".agents/skills"
+                        };
+                        let link_path = std::path::Path::new(&proj.root_path)
+                            .join(target_rel)
+                            .join(&dep.directory);
+                        if crate::services::project::fs_safety::is_symlink(&link_path) {
+                            let _ =
+                                crate::services::project::fs_safety::remove_path_any(&link_path);
+                        }
+                    }
+                }
+                dep.detached_at = Some(now);
+                dep.updated_at = now;
+                let _ = db.save_project_deployment(&dep);
+            }
+        }
     }
 
     Ok(())

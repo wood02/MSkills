@@ -674,6 +674,14 @@ pub fn run() {
             }
 
             let app_state = AppState::new(db);
+            {
+                let _skill_guard = crate::services::skill::skill_state_write_guard();
+                if let Err(error) =
+                    crate::services::project::journal::recover_pending_operations(&app_state.db)
+                {
+                    log::error!("启动恢复未完成 Skill 操作日志失败: {error}");
+                }
+            }
             let legacy_links_pending = config::get_app_config_dir().join(".legacy-skill-links-pending");
             if legacy_links_pending.exists() {
                 if let Err(error) = SkillService::migrate_legacy_skill_links(&app_state.db) {
@@ -1573,6 +1581,7 @@ pub fn run() {
             commands::create_db_backup,
             commands::list_db_backups,
             commands::restore_db_backup,
+            commands::restore_db_backup_with_report,
             commands::rename_db_backup,
             commands::delete_db_backup,
             commands::sync_current_providers_live,
@@ -1600,6 +1609,8 @@ pub fn run() {
             commands::delete_skill_backup,
             commands::install_skill_unified,
             commands::uninstall_skill_unified,
+            commands::preview_skill_uninstall_impact,
+            commands::uninstall_skill_with_options,
             commands::restore_skill_backup,
             commands::toggle_skill_app,
             commands::scan_unmanaged_skills,
@@ -1623,6 +1634,33 @@ pub fn run() {
             commands::add_skill_repo,
             commands::remove_skill_repo,
             commands::install_skills_from_zip,
+            // Project Workspace & Rules management (P2.1 & P2.2)
+            commands::pick_project_directory,
+            commands::list_projects,
+            commands::suggest_projects_from_sessions,
+            commands::add_project,
+            commands::update_project,
+            commands::relocate_project,
+            commands::preview_remove_project,
+            commands::remove_project,
+            commands::scan_project_skills,
+            commands::deploy_skills_to_project,
+            commands::deploy_skill_group_to_project,
+            commands::update_project_deployments,
+            commands::promote_claude_deployment,
+            commands::undeploy_project_skill,
+            commands::adopt_project_skill,
+            commands::rebind_project_deployment,
+            commands::settle_missing_project_link,
+            commands::push_skill_to_global,
+            commands::import_project_skills,
+            commands::diff_project_skill,
+            commands::list_project_rules,
+            commands::save_project_rule_file,
+            commands::apply_prompt_to_project_rule,
+            commands::insert_agents_reference_in_claude_md,
+            commands::list_rule_snapshots,
+            commands::restore_rule_snapshot,
             // Auto launch
             commands::set_auto_launch,
             commands::get_auto_launch_status,

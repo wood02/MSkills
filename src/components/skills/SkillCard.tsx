@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Portal as TooltipPortal } from "@radix-ui/react-tooltip";
 import { useTranslation } from "react-i18next";
 import {
@@ -20,7 +20,7 @@ import {
 import {
   ExternalLink,
   Download,
-  Trash2,
+  Check,
   Loader2,
   Award,
   TrendingUp,
@@ -58,30 +58,42 @@ const METRIC_ICONS: Record<BestSkillsMetricIcon, LucideIcon> = {
   calendar: CalendarPlus,
 };
 
-/** Gold, silver, bronze: metal face, rim, ribbon, and staggered shine delay. */
-const MEDALS = [
+/** Gold, silver, bronze: rosette metal gradient, ribbons, stroke, and high-contrast ink. */
+const ROSETTE_MEDALS = [
   {
-    face: "radial-gradient(circle at 32% 28%, #fff7d1 0%, #f8d468 28%, #d9a21b 62%, #9a6a08 100%)",
-    rim: "#f3c63f",
-    text: "text-amber-950",
-    ribbon: ["bg-red-600", "bg-red-500"],
-    delay: "0s",
+    stop1: "#fef08a",
+    stop2: "#fbbf24",
+    stop3: "#d97706",
+    stroke: "#b45309",
+    ribbonLeft: "#dc2626",
+    ribbonRight: "#b91c1c",
+    text: "#451a03",
   },
   {
-    face: "radial-gradient(circle at 32% 28%, #ffffff 0%, #e4e8ee 30%, #a9b2bf 65%, #6b7380 100%)",
-    rim: "#cfd5de",
-    text: "text-slate-800",
-    ribbon: ["bg-blue-700", "bg-blue-600"],
-    delay: "1.3s",
+    stop1: "#ffffff",
+    stop2: "#e2e8f0",
+    stop3: "#94a3b8",
+    stroke: "#64748b",
+    ribbonLeft: "#2563eb",
+    ribbonRight: "#1d4ed8",
+    text: "#0f172a",
   },
   {
-    face: "radial-gradient(circle at 32% 28%, #ffe1c4 0%, #e9a066 30%, #b8662c 65%, #7a3d12 100%)",
-    rim: "#d98b4f",
-    text: "text-orange-950",
-    ribbon: ["bg-emerald-700", "bg-emerald-600"],
-    delay: "2.6s",
+    stop1: "#ffedd5",
+    stop2: "#fdba74",
+    stop3: "#d97742",
+    stroke: "#9a3412",
+    ribbonLeft: "#059669",
+    ribbonRight: "#047857",
+    text: "#431407",
   },
 ];
+
+const TOP_CARD_BORDER: Record<number, string> = {
+  1: "border-amber-500/45 hover:border-amber-500/65",
+  2: "border-slate-400/50 hover:border-slate-400/75 dark:border-slate-400/40 dark:hover:border-slate-400/60",
+  3: "border-amber-700/35 hover:border-amber-700/55 dark:border-amber-600/40 dark:hover:border-amber-600/60",
+};
 
 function RankingMetric({ metric }: { metric: BestSkillsMetric }) {
   const Icon = METRIC_ICONS[metric.icon];
@@ -92,10 +104,11 @@ function RankingMetric({ metric }: { metric: BestSkillsMetric }) {
     <span
       title={title}
       aria-label={title}
-      className="ml-auto flex shrink-0 items-center gap-1 text-xs"
+      className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-md border border-border/60 bg-muted/75 px-2 py-0.5 text-[11px] leading-tight"
     >
-      <Icon aria-hidden className="h-3 w-3 text-muted-foreground" />
-      <span className="font-semibold tabular-nums text-foreground">
+      <Icon aria-hidden className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="truncate text-muted-foreground">{metric.label}</span>
+      <span className="shrink-0 font-semibold tabular-nums text-foreground">
         {metric.value}
       </span>
     </span>
@@ -103,71 +116,95 @@ function RankingMetric({ metric }: { metric: BestSkillsMetric }) {
 }
 
 function RankMedal({ rank }: { rank: number }) {
-  const medal = MEDALS[rank - 1];
+  const gradientId = useId();
+  const medal = ROSETTE_MEDALS[rank - 1];
   if (!medal) {
     return (
       <div
         aria-label={`#${rank}`}
-        className="flex h-9 min-w-9 shrink-0 items-center justify-center rounded-lg bg-muted px-1.5 text-sm font-bold tabular-nums text-muted-foreground"
+        className="flex h-10 min-w-[38px] shrink-0 items-center justify-center"
       >
-        #{rank}
+        <span className="flex h-8 min-w-[34px] items-center justify-center rounded-lg border border-border/60 bg-muted/80 px-1.5 text-xs font-bold tabular-nums text-muted-foreground">
+          #{rank}
+        </span>
       </div>
     );
   }
   return (
-    <div aria-label={`#${rank}`} className="relative h-[54px] w-10 shrink-0">
-      {/* Ribbon tails meet behind the medal in a V. */}
-      <span
-        className={cn(
-          "absolute left-[7px] top-0 h-6 w-[11px] -skew-x-[16deg] rounded-[1px]",
-          medal.ribbon[0],
-        )}
-      />
-      <span
-        className={cn(
-          "absolute right-[7px] top-0 h-6 w-[11px] skew-x-[16deg] rounded-[1px]",
-          medal.ribbon[1],
-        )}
-      />
-      <div
-        className={cn(
-          "absolute bottom-0 left-0 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full text-base font-extrabold tabular-nums",
-          medal.text,
-        )}
-        style={{
-          background: medal.face,
-          boxShadow: `0 0 0 1.5px ${medal.rim}, inset 0 0 0 3px rgba(255,255,255,0.35), inset 0 -3px 5px rgba(0,0,0,0.28), 0 3px 6px rgba(0,0,0,0.3)`,
-          textShadow:
-            "0 1px 0 rgba(255,255,255,0.65), 0 -1px 0 rgba(0,0,0,0.25)",
-        }}
+    <div
+      aria-label={`#${rank}`}
+      className="flex h-10 min-w-[38px] shrink-0 items-center justify-center"
+    >
+      <svg
+        width="36"
+        height="40"
+        viewBox="0 0 36 40"
+        fill="none"
+        aria-hidden="true"
       >
-        {rank}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 -left-full w-full animate-medal-shine bg-[linear-gradient(115deg,transparent_30%,rgba(255,255,255,0.85)_50%,transparent_70%)] [animation-delay:var(--medal-delay)] group-hover:animate-medal-shine-once group-hover:[animation-delay:0s] motion-reduce:hidden"
-          style={{ "--medal-delay": medal.delay } as CSSProperties}
+        <defs>
+          <linearGradient
+            id={gradientId}
+            x1="7"
+            y1="5"
+            x2="29"
+            y2="29"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop stopColor={medal.stop1} />
+            <stop offset="0.52" stopColor={medal.stop2} />
+            <stop offset="1" stopColor={medal.stop3} />
+          </linearGradient>
+        </defs>
+        <path
+          d="M11 26L8 38l5-2.5L16 38l1-11H11Z"
+          fill={medal.ribbonLeft}
+          opacity="0.92"
         />
-      </div>
+        <path d="M25 26l3 12-5-2.5L20 38l-1-11h6Z" fill={medal.ribbonRight} />
+        <path
+          d="M18 3l2.6 2.1 3.3-.4 1.3 3 3.1 1-.3 3.3 2.2 2.4-1.7 2.8.8 3.2-2.7 1.8-.6 3.3-3.2.5-1.9 2.7-3.1-.9-3.1.9-1.9-2.7-3.2-.5-.6-3.3-2.7-1.8.8-3.2-1.7-2.8 2.2-2.4-.3-3.3 3.1-1 1.3-3 3.3.4L18 3Z"
+          fill={`url(#${gradientId})`}
+          stroke={medal.stroke}
+          strokeWidth="1"
+        />
+        <circle
+          cx="18"
+          cy="17.5"
+          r="9.2"
+          stroke="rgba(255,255,255,0.55)"
+          strokeWidth="1"
+        />
+        <text
+          x="18"
+          y="21.5"
+          textAnchor="middle"
+          fontSize="11.5"
+          fontWeight="800"
+          fill={medal.text}
+        >
+          {rank}
+        </text>
+      </svg>
     </div>
   );
 }
 
 const PLATFORM_STYLES: Record<string, string> = {
-  // skills.sh: black-and-white with the Vercel triangle.
-  "skills.sh":
-    "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black",
+  // Neutral monochrome pill so skills.sh never collides visually with dark Vercel avatars.
+  "skills.sh": "border-border/80 bg-muted/70 text-muted-foreground",
   // Tencent brand blue (TDesign #0052D9).
   "skillhub-cn":
-    "border-[#0052D9]/30 bg-[#0052D9]/10 text-[#0052D9] dark:border-[#4f8cff]/40 dark:bg-[#0052D9]/25 dark:text-[#7aa7ff]",
+    "border-[#0052D9]/25 bg-[#0052D9]/8 text-[#0052D9] dark:border-[#4f8cff]/35 dark:bg-[#0052D9]/20 dark:text-[#8eb5ff]",
   // ClawHub lobster red.
   clawhub:
-    "border-[#E5483B]/30 bg-[#E5483B]/10 text-[#D23A2E] dark:border-[#E5483B]/50 dark:bg-[#E5483B]/20 dark:text-[#ff7a6e]",
+    "border-[#E5483B]/25 bg-[#E5483B]/8 text-[#C7362B] dark:border-[#E5483B]/40 dark:bg-[#E5483B]/15 dark:text-[#ff857a]",
 };
 
 interface SkillCardProps {
   skill: SkillCardSkill;
   onInstall: (key: string) => Promise<void>;
-  onUninstall: (key: string) => Promise<void>;
+  onUninstall?: (key: string) => Promise<void>;
   installs?: number;
   ranking?: SkillCardRanking;
   viewOnly?: boolean;
@@ -176,7 +213,6 @@ interface SkillCardProps {
 export function SkillCard({
   skill,
   onInstall,
-  onUninstall,
   installs,
   ranking,
   viewOnly = false,
@@ -209,15 +245,6 @@ export function SkillCard({
     }
   };
 
-  const handleUninstall = async () => {
-    setLoading(true);
-    try {
-      await onUninstall(skill.key);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleOpenGithub = async () => {
     if (skill.readmeUrl) {
       try {
@@ -233,32 +260,38 @@ export function SkillCard({
     skill.directory.trim().toLowerCase() !== skill.name.trim().toLowerCase();
 
   return (
-    <Card className="glass-card flex flex-col h-full transition-all duration-300 hover:shadow-lg group relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-      <CardHeader className="pb-3">
-        <div className="flex items-start gap-3">
+    <Card
+      className={cn(
+        "glass-card flex h-full flex-col rounded-xl border bg-card shadow-sm transition-colors duration-150 group hover:shadow-md",
+        ranking
+          ? (TOP_CARD_BORDER[ranking.rank] ??
+              "border-border-default hover:border-sky-500/40")
+          : "border-border-default hover:border-sky-500/40",
+      )}
+    >
+      <CardHeader
+        className={cn("px-4 py-3.5", skill.description ? "pb-2" : "pb-3")}
+      >
+        <div className="flex items-center gap-2.5">
           {ranking && <RankMedal rank={ranking.rank} />}
-          <RepoAvatar owner={skill.repoOwner} name={skill.name} />
+          <RepoAvatar
+            owner={skill.repoOwner}
+            name={skill.name}
+            className="h-9 w-9 shrink-0 rounded-lg group-hover:scale-100 group-hover:shadow-sm"
+          />
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
               <CardTitle
-                className="text-base font-semibold truncate"
+                className="min-w-[6rem] max-w-full flex-1 truncate text-[14.5px] font-semibold leading-snug tracking-tight"
                 title={skill.name}
               >
                 {skill.name}
               </CardTitle>
-              {skill.installed && (
-                <Badge
-                  variant="default"
-                  className="shrink-0 text-xs px-2 py-0.5 bg-green-600/90 hover:bg-green-600 dark:bg-green-700/90 dark:hover:bg-green-700 text-white border-0"
-                >
-                  {t("skills.installed")}
-                </Badge>
-              )}
+              {ranking && <RankingMetric metric={ranking.metric} />}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
               {showDirectory && (
-                <CardDescription className="text-xs truncate">
+                <CardDescription className="max-w-full truncate text-xs">
                   {skill.directory}
                 </CardDescription>
               )}
@@ -266,12 +299,12 @@ export function SkillCard({
                 <Badge
                   variant="outline"
                   className={cn(
-                    "shrink-0 text-[10px] px-1.5 py-0 h-4",
+                    "inline-flex h-[18px] shrink-0 items-center gap-0.5 rounded-[5px] px-1.5 py-0 text-[10.5px] font-medium",
                     PLATFORM_STYLES[ranking.platform],
                   )}
                 >
                   {ranking.platform === "skills.sh" && (
-                    <span aria-hidden className="mr-0.5 text-[8px]">
+                    <span aria-hidden className="text-[8px] opacity-80">
                       ▲
                     </span>
                   )}
@@ -279,31 +312,30 @@ export function SkillCard({
                 </Badge>
               )}
               {skill.repoOwner && skill.repoName && (
-                <Badge
-                  variant="outline"
-                  className="max-w-[13rem] text-[10px] px-1.5 py-0 h-4 border-border-default"
+                <span
+                  className="min-w-0 max-w-full truncate font-mono text-[11px] text-muted-foreground"
+                  title={`${skill.repoOwner}/${skill.repoName}`}
                 >
-                  <span className="truncate">
-                    {skill.repoOwner}/{skill.repoName}
-                  </span>
-                </Badge>
+                  {skill.repoOwner}/{skill.repoName}
+                </span>
               )}
               {typeof installs === "number" && (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 text-[10px] px-1.5 py-0 h-4"
-                >
-                  <Download className="h-2.5 w-2.5 mr-0.5" />
+                <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium tabular-nums text-muted-foreground">
+                  {skill.repoOwner && skill.repoName && (
+                    <span aria-hidden className="opacity-50">
+                      ·
+                    </span>
+                  )}
+                  <Download className="h-3 w-3 opacity-80" aria-hidden />
                   {installs.toLocaleString()}
-                </Badge>
+                </span>
               )}
-              {ranking && <RankingMetric metric={ranking.metric} />}
             </div>
           </div>
         </div>
       </CardHeader>
       {skill.description ? (
-        <CardContent className="flex-1 pt-0">
+        <CardContent className="flex-1 px-4 pt-0 pb-3">
           <TooltipProvider delayDuration={150} skipDelayDuration={0}>
             <Tooltip
               open={descriptionOverflow && descriptionOpen}
@@ -315,7 +347,7 @@ export function SkillCard({
                   ref={descriptionRef}
                   tabIndex={descriptionOverflow ? 0 : undefined}
                   className={cn(
-                    "text-sm text-muted-foreground/90 line-clamp-4 leading-relaxed",
+                    "text-[13px] text-muted-foreground line-clamp-4 leading-relaxed",
                     descriptionOverflow &&
                       "cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   )}
@@ -339,52 +371,55 @@ export function SkillCard({
       ) : (
         <div className="flex-1" />
       )}
-      <CardFooter className="flex gap-2 pt-3 border-t border-border/50 relative z-10">
-        {skill.readmeUrl && (
+      <CardFooter className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 px-4 py-2.5">
+        {skill.readmeUrl ? (
           <Button
             variant="ghost"
             size="sm"
             onClick={handleOpenGithub}
             disabled={loading}
-            className="flex-1"
+            className="h-7 -ml-2 px-2 text-xs text-muted-foreground hover:text-foreground"
           >
-            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
             {t("skills.view")}
           </Button>
+        ) : (
+          <span />
         )}
         {viewOnly ? (
           !skill.readmeUrl && (
-            <Button variant="outline" size="sm" disabled className="flex-1">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              className="ml-auto h-7 rounded-[7px] px-2.5 text-xs"
+            >
               {t("skills.custom.unavailable", "暂无链接")}
             </Button>
           )
         ) : skill.installed ? (
+          <span
+            title={t("skills.uninstallInMainPanel")}
+            className="ml-auto inline-flex h-7 items-center gap-1 rounded-[7px] border border-border-default bg-muted/70 px-2.5 text-[11.5px] font-medium text-muted-foreground"
+          >
+            <Check
+              className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
+              aria-hidden="true"
+            />
+            {t("skills.installed")}
+          </span>
+        ) : (
           <Button
             variant="outline"
             size="sm"
-            onClick={handleUninstall}
-            disabled={loading}
-            className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/50 dark:hover:text-red-300"
-          >
-            {loading ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-            )}
-            {loading ? t("skills.uninstalling") : t("skills.uninstall")}
-          </Button>
-        ) : (
-          <Button
-            variant="mcp"
-            size="sm"
             onClick={handleInstall}
             disabled={loading || !skill.repoOwner}
-            className="flex-1"
+            className="ml-auto h-7 rounded-[7px] border-emerald-500/35 bg-emerald-500/10 px-2.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
           >
             {loading ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Download className="h-3.5 w-3.5 mr-1.5" />
+              <Download className="mr-1.5 h-3.5 w-3.5" />
             )}
             {loading ? t("skills.installing") : t("skills.install")}
           </Button>

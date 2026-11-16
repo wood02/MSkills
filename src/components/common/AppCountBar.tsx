@@ -48,15 +48,41 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
       ? t("common.disableAllForApp", { app: APP_ICON_MAP[app].label })
       : t("common.enableAllForApp", { app: APP_ICON_MAP[app].label });
 
+    const idle = count === 0;
+    const iconTile = (
+      <span
+        data-app-icon-tile
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border",
+          idle
+            ? "border-border bg-transparent opacity-65 grayscale"
+            : "border-border/60 bg-background/95 shadow-[0_1px_1px_rgba(0,0,0,0.04)]",
+        )}
+      >
+        <span className="inline-flex scale-[0.82] items-center justify-center">
+          {APP_ICON_MAP[app].icon}
+        </span>
+      </span>
+    );
+
     if (!bulkToggleEnabled) {
       return (
         <Badge
           key={app}
           variant="secondary"
-          className={APP_ICON_MAP[app].badgeClass}
+          className={cn(
+            "h-7 rounded-lg border pl-1.5 pr-2.5 text-xs",
+            idle
+              ? "border-border/70 bg-muted/65 text-muted-foreground"
+              : APP_ICON_MAP[app].badgeClass,
+          )}
         >
-          <span className="opacity-75">{label}:</span>
-          <span className="font-bold ml-1">
+          {iconTile}
+          <span data-app-label={label} className="font-medium opacity-90">
+            {label}
+          </span>
+          <span className="ml-0.5 font-semibold tabular-nums">
             {formatCount?.(app, count) ?? count}
           </span>
         </Badge>
@@ -86,13 +112,18 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
         onClick={() => void onToggleAll?.(app, !allEnabled)}
         className={cn(
           badgeVariants({ variant: "secondary" }),
-          APP_ICON_MAP[app].badgeClass,
-          "shrink-0 cursor-pointer select-none whitespace-nowrap focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed",
+          "h-7 shrink-0 cursor-pointer select-none whitespace-nowrap rounded-lg border pl-1.5 pr-2.5 text-xs transition-colors focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed",
+          idle
+            ? "border-border/70 bg-muted/65 text-muted-foreground hover:bg-muted hover:text-foreground"
+            : APP_ICON_MAP[app].badgeClass,
           pending && "cursor-wait disabled:cursor-wait",
         )}
       >
-        <span className="opacity-75">{label}:</span>
-        <span className="ml-1 inline-flex items-baseline gap-1 font-bold tabular-nums">
+        {iconTile}
+        <span data-app-label={label} className="font-medium opacity-90">
+          {label}
+        </span>
+        <span className="ml-0.5 inline-flex items-baseline gap-1 font-semibold tabular-nums">
           {formatCount?.(app, count) ?? count}
         </span>
       </button>
@@ -101,8 +132,8 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
   return (
     <div
       className={cn(
-        "mb-4 flex flex-shrink-0 items-center gap-4 rounded-xl border border-white/10 glass",
-        countsLabel ? "px-4 py-3" : "px-6 py-4",
+        "glass mb-4 flex flex-shrink-0 items-center gap-3.5 rounded-xl border border-border-default bg-card/90 shadow-sm",
+        leading || countsLabel ? "px-3.5 py-2.5" : "px-6 py-4",
       )}
     >
       {leading ?? (
@@ -116,7 +147,8 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
       <div
         className={cn(
           "min-w-0 flex-1",
-          countsLabel && "flex items-center gap-3 border-l border-border pl-4",
+          (leading || countsLabel) &&
+            "flex items-center gap-3 border-l border-border/70 pl-3.5",
         )}
       >
         {countsLabel && (
@@ -126,13 +158,15 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
         )}
         <div
           className={
-            countsLabel ? "min-w-0 flex-1" : "overflow-x-auto no-scrollbar"
+            leading || countsLabel
+              ? "min-w-0 flex-1"
+              : "overflow-x-auto no-scrollbar"
           }
         >
           <div
             className={cn(
               "flex items-center gap-2",
-              countsLabel
+              leading || countsLabel
                 ? "flex-wrap justify-start"
                 : "ml-auto w-max min-w-full justify-end",
             )}

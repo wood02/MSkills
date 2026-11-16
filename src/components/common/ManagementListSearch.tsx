@@ -9,6 +9,7 @@ interface ManagementListSearchProps {
   ariaLabel: string;
   clearLabel: string;
   className?: string;
+  inputClassName?: string;
 }
 
 /** Shared, presentation-only search field for local management lists. */
@@ -19,6 +20,7 @@ export function ManagementListSearch({
   ariaLabel,
   clearLabel,
   className,
+  inputClassName,
 }: ManagementListSearchProps) {
   return (
     <div role="search" className={cn("relative flex-shrink-0 mb-4", className)}>
@@ -37,7 +39,7 @@ export function ManagementListSearch({
         }}
         placeholder={placeholder}
         aria-label={ariaLabel}
-        className="pl-9 pr-9"
+        className={cn("pl-9 pr-9", inputClassName)}
       />
       {value && (
         <button

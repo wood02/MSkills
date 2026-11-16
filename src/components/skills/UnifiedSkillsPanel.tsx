@@ -2,6 +2,9 @@ import React, { useMemo, useState } from "react";
 import { useIsMutating } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowUpCircle,
+  ArrowUpDown,
+  Filter,
   Sparkles,
   Trash2,
   ExternalLink,
@@ -11,6 +14,9 @@ import {
   Eye,
   Download,
   ChevronRight,
+  FolderGit2,
+  X,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +49,7 @@ import type { VisibleApps } from "@/types";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi, skillsApi } from "@/lib/api";
+import { DeployToProjectDialog } from "@/components/projects/DeployToProjectDialog";
 import { toast } from "sonner";
 import { APP_ICON_MAP, SKILLS_APP_IDS } from "@/config/appConfig";
 import { AppCountBar } from "@/components/common/AppCountBar";
@@ -73,8 +80,12 @@ import type {
   SkillUsageSnapshot,
   SkillUsageSummary,
 } from "@/lib/api/skills";
-import { SkillUsageTrend, formatTokens } from "./SkillUsageTrend";
-import { skillUsageColor, skillUsageTotals } from "@/lib/skillUsage";
+import { SkillUsageTrend } from "./SkillUsageTrend";
+import {
+  formatTokens,
+  skillUsageColor,
+  skillUsageTotals,
+} from "@/lib/skillUsage";
 
 const IMPORT_SKILLS_APP_IDS = SKILLS_APP_IDS.filter((app) => app !== "pi");
 
@@ -161,8 +172,14 @@ const UnifiedSkillsPanel = React.forwardRef<
     message: string;
     confirmText?: string;
     variant?: "destructive" | "info";
-    onConfirm: () => void;
+    checkboxLabel?: string;
+    checkboxDefaultChecked?: boolean;
+    onConfirm: (checkboxChecked?: boolean) => void;
   } | null>(null);
+  const [deployProjectSkillIds, setDeployProjectSkillIds] = useState<
+    string[] | null
+  >(null);
+  const uninstallPreviewSeqRef = React.useRef(0);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [previewSkill, setPreviewSkill] = useState<InstalledSkill | null>(null);
@@ -214,6 +231,13 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const updateSkillMutation = useUpdateSkill();
   const [isUpdatingAll, setIsUpdatingAll] = useState(false);
+  const [onlyUpdatableFilter, setOnlyUpdatableFilter] = useState(false);
+  const [updateChipsExpanded, setUpdateChipsExpanded] = useState(false);
+  const [updateNoticeDismissed, setUpdateNoticeDismissed] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const visibleSkillAppIds = visibleApps
     ? SKILLS_APP_IDS.filter((app) =>
         app === "claude"
@@ -311,6 +335,9 @@ const UnifiedSkillsPanel = React.forwardRef<
     return map;
   }, [applicableSkillUpdates]);
 
+  const activeOnlyUpdatable =
+    onlyUpdatableFilter && applicableSkillUpdates.length > 0;
+
   const repoSources = useMemo(
     () =>
       [
@@ -351,18 +378,21 @@ const UnifiedSkillsPanel = React.forwardRef<
           : "all";
 
   const filteredSkills = useMemo(() => {
-    if (!skills || activeSourceFilter === "plugins") return [];
+    if (!skills || (!activeOnlyUpdatable && activeSourceFilter === "plugins")) {
+      return [];
+    }
 
-    const sourceSkills =
-      activeSourceFilter === "all"
+    const baseSkills = activeOnlyUpdatable
+      ? skills.filter((skill) => Boolean(updatesMap[skill.id]))
+      : activeSourceFilter === "all"
         ? skills
         : skills.filter(
             (skill) => getSkillSource(skill) === activeSourceFilter,
           );
     const query = searchQuery.trim().toLocaleLowerCase();
-    if (!query) return sourceSkills;
+    if (!query) return baseSkills;
 
-    return sourceSkills.filter((skill) => {
+    return baseSkills.filter((skill) => {
       const searchableValues = [
         skill.name,
         skill.id,
@@ -379,7 +409,13 @@ const UnifiedSkillsPanel = React.forwardRef<
         value?.toLocaleLowerCase().includes(query),
       );
     });
-  }, [activeSourceFilter, searchQuery, skills]);
+  }, [
+    activeOnlyUpdatable,
+    activeSourceFilter,
+    searchQuery,
+    skills,
+    updatesMap,
+  ]);
 
   // 计数和批量开关都只作用于当前筛选结果
   const enabledCounts = useMemo(() => {
@@ -455,8 +491,12 @@ const UnifiedSkillsPanel = React.forwardRef<
     return { pluginDescriptions: descriptions, pluginSources: sources };
   }, [usage.data?.snapshots]);
   const pluginSkillNames = useMemo(() => {
-    if (activeSourceFilter !== "all" && activeSourceFilter !== "plugins")
+    if (
+      activeOnlyUpdatable ||
+      (activeSourceFilter !== "all" && activeSourceFilter !== "plugins")
+    ) {
       return new Set<string>();
+    }
     const query = searchQuery.trim().toLocaleLowerCase();
     return new Set(
       [...allPluginSkillNames].filter((name) =>
@@ -466,6 +506,7 @@ const UnifiedSkillsPanel = React.forwardRef<
       ),
     );
   }, [
+    activeOnlyUpdatable,
     activeSourceFilter,
     allPluginSkillNames,
     pluginDescriptions,
@@ -609,14 +650,24 @@ const UnifiedSkillsPanel = React.forwardRef<
     ) {
       return;
     }
+    const baseMessage = t("skills.uninstallConfirm", { name: skill.name });
+    const previewSeq = ++uninstallPreviewSeqRef.current;
+
     setConfirmDialog({
       isOpen: true,
       title: t("skills.uninstall"),
-      message: t("skills.uninstallConfirm", { name: skill.name }),
-      onConfirm: async () => {
+      message: baseMessage,
+      onConfirm: async (unlinkProjectSymlinks) => {
         if (!beginWrite(true)) return;
         try {
-          const result = await uninstallMutation.mutateAsync(skill.id);
+          const result = await uninstallMutation.mutateAsync(
+            unlinkProjectSymlinks
+              ? {
+                  id: skill.id,
+                  unlinkProjectSymlinks: true,
+                }
+              : skill.id,
+          );
           setConfirmDialog(null);
           const piCleanupIncomplete =
             result.piCleanupIncomplete || Boolean(result.preservedPiPath);
@@ -654,6 +705,36 @@ const UnifiedSkillsPanel = React.forwardRef<
         }
       },
     });
+
+    if (typeof skillsApi.previewUninstallImpact === "function") {
+      void skillsApi
+        .previewUninstallImpact(skill.id)
+        .then((impact) => {
+          if (
+            uninstallPreviewSeqRef.current !== previewSeq ||
+            impact.length === 0
+          ) {
+            return;
+          }
+          const symlinkImpact = impact.filter((d) => d.mode === "symlink");
+          const copyImpact = impact.filter((d) => d.mode !== "symlink");
+          const impactHint = `\n\n注意：该 Skill 当前已部署到 ${impact.length} 个项目位置（其中软链 ${symlinkImpact.length} 个、独立拷贝 ${copyImpact.length} 个）。卸载后，未拆除的软链将失效，拷贝将变为“全局源缺失”。`;
+          setConfirmDialog((prev) =>
+            prev?.isOpen
+              ? {
+                  ...prev,
+                  message: `${baseMessage}${impactHint}`,
+                  checkboxLabel:
+                    symlinkImpact.length > 0
+                      ? `同时安全拆除 ${symlinkImpact.length} 个项目软链并清理 Git 忽略项`
+                      : undefined,
+                  checkboxDefaultChecked: symlinkImpact.length > 0,
+                }
+              : prev,
+          );
+        })
+        .catch(() => undefined);
+    }
   };
 
   const handleOpenImport = async () => {
@@ -732,6 +813,7 @@ const UnifiedSkillsPanel = React.forwardRef<
     ) {
       return;
     }
+    setUpdateNoticeDismissed(false);
     checkUpdatesLockRef.current = true;
     setIsCheckingUpdates(true);
     try {
@@ -770,10 +852,15 @@ const UnifiedSkillsPanel = React.forwardRef<
     if (applicableSkillUpdates.length === 0 || !beginWrite()) {
       return;
     }
+    const queue = [...applicableSkillUpdates];
+    const total = queue.length;
     setIsUpdatingAll(true);
+    setUpdateProgress({ current: 1, total });
     let successCount = 0;
     try {
-      for (const update of applicableSkillUpdates) {
+      for (let i = 0; i < queue.length; i++) {
+        const update = queue[i];
+        setUpdateProgress({ current: i + 1, total });
         try {
           await updateSkillMutation.mutateAsync(update.id);
           successCount++;
@@ -785,6 +872,8 @@ const UnifiedSkillsPanel = React.forwardRef<
       }
     } finally {
       setIsUpdatingAll(false);
+      setUpdateProgress(null);
+      setOnlyUpdatableFilter(false);
       endWrite();
     }
     if (successCount > 0) {
@@ -792,6 +881,19 @@ const UnifiedSkillsPanel = React.forwardRef<
         closeButton: true,
       });
     }
+  };
+
+  const handleToggleOnlyUpdatable = () => {
+    setOnlyUpdatableFilter((prev) => {
+      const next = !prev;
+      if (next) {
+        setSearchQuery("");
+        if (sourceFilter !== "all") {
+          setSourceFilter("all");
+        }
+      }
+      return next;
+    });
   };
 
   const handleCreate = async (directory: string, description: string) => {
@@ -942,118 +1044,223 @@ const UnifiedSkillsPanel = React.forwardRef<
     checkUpdates: handleCheckUpdates,
   }));
 
-  return (
-    <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <AppCountBar
-            totalLabel=""
-            leading={
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  {t("skills.usage.title")}
-                </span>
-                <div
-                  className="inline-flex gap-0.5 rounded-lg border border-border/50 bg-muted/50 p-1"
-                  role="group"
-                  aria-label={t("skills.usage.range")}
-                >
-                  {(["day", "week"] as const).map((range) => (
-                    <button
-                      key={range}
-                      type="button"
-                      aria-pressed={usageRange === range}
-                      onClick={() => setUsageRange(range)}
-                      className={cn(
-                        "rounded-md px-2.5 py-1 text-xs transition-colors",
-                        usageRange === range
-                          ? "bg-blue-50 font-medium text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/30"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {t(
-                        range === "day"
-                          ? "skills.usage.today"
-                          : "skills.usage.week",
-                      )}{" "}
-                      <span
-                        className={cn(
-                          "font-medium tabular-nums",
-                          usageRange !== range && "text-foreground",
-                        )}
-                      >
-                        {usageTotal(usage.data?.snapshots?.[range]) ?? "…"}
-                      </span>{" "}
-                      {t("skills.usage.times")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            }
-            countsLabel={
-              <span className="flex flex-col items-start text-[11px]">
-                <span>{t("skills.usage.enabledTitle")}</span>
-                <span>/ {t("skills.usage.callsTitle")}</span>
-              </span>
-            }
-            formatCount={(app, count) => (
-              <>
-                <span>{t("skills.usage.enabledCount", { count })}</span>
-                <span className="font-normal text-muted-foreground/60">/</span>
-                <span>{agentUsageLabel(app)}</span>
-              </>
-            )}
-            getCountDescription={(app, count) =>
-              [
-                t("skills.usage.enabledForApp", {
-                  app: APP_ICON_MAP[app].label,
-                  count,
-                }),
-                t(
-                  usageRange === "day"
-                    ? "skills.usage.today"
-                    : "skills.usage.week",
-                ) +
-                  ": " +
-                  agentUsageLabel(app),
-              ].join("\n")
-            }
-            counts={enabledCounts}
-            appIds={visibleSkillAppIds}
-            totalCount={filteredSkills.length}
-            onToggleAll={handleToggleAll}
-            pendingApp={pendingApp}
-            disabled={interactionBlocked}
-          />
+  const showUpdateSlot =
+    applicableSkillUpdates.length > 0 &&
+    (!updateNoticeDismissed || isUpdatingAll);
+
+  const visibleUpdateChips = updateChipsExpanded
+    ? applicableSkillUpdates
+    : applicableSkillUpdates.slice(0, 3);
+  const hiddenUpdateCount = Math.max(0, applicableSkillUpdates.length - 3);
+  const progressPercent =
+    isUpdatingAll && updateProgress && updateProgress.total > 0
+      ? Math.min(
+          100,
+          Math.round((updateProgress.current / updateProgress.total) * 100),
+        )
+      : 0;
+
+  const updateNoticeSlot = showUpdateSlot ? (
+    <div
+      role="region"
+      aria-label={t("skills.updateNotice.title", {
+        count: applicableSkillUpdates.length,
+      })}
+      className="relative flex flex-wrap items-center justify-between gap-3 border-b border-sky-500/20 bg-sky-500/[0.045] px-4 py-2.5"
+    >
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
+        <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold tabular-nums text-sky-700 dark:text-sky-300">
+          {isUpdatingAll ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ArrowUpCircle className="h-3.5 w-3.5" />
+          )}
+          <span>
+            {isUpdatingAll && updateProgress
+              ? t("skills.updateNotice.updatingTitle", updateProgress)
+              : t("skills.updateNotice.title", {
+                  count: applicableSkillUpdates.length,
+                })}
+          </span>
+        </span>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {visibleUpdateChips.map((update) => {
+            const matchedSkill = skills?.find((s) => s.id === update.id);
+            return (
+              <button
+                key={update.id}
+                type="button"
+                disabled={!matchedSkill || interactionBlocked}
+                onClick={() => {
+                  if (matchedSkill) {
+                    setEditPreview(false);
+                    setPreviewSkill(matchedSkill);
+                  }
+                }}
+                title={t("skills.updateNotice.viewSkillHint", {
+                  name: update.name,
+                })}
+                className="inline-flex h-5 max-w-[11rem] items-center truncate rounded border border-sky-500/25 bg-background/90 px-1.5 font-mono text-[11px] text-foreground transition-colors hover:border-sky-500/60 hover:text-sky-700 disabled:cursor-default disabled:opacity-70 dark:hover:text-sky-300"
+              >
+                {update.name}
+              </button>
+            );
+          })}
+          {hiddenUpdateCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setUpdateChipsExpanded((prev) => !prev)}
+              className="inline-flex h-5 items-center rounded border border-dashed border-sky-500/35 px-1.5 text-[11px] font-medium tabular-nums text-sky-700 transition-colors hover:bg-sky-500/10 dark:text-sky-300"
+            >
+              {updateChipsExpanded
+                ? t("skills.updateNotice.collapse")
+                : t("skills.updateNotice.moreCount", {
+                    count: hiddenUpdateCount,
+                  })}
+            </button>
+          )}
         </div>
-        <div
-          className="mb-4 overflow-hidden transition-all duration-300 ease-out"
-          style={{
-            maxWidth: applicableSkillUpdates.length > 0 ? "200px" : "0px",
-            opacity: applicableSkillUpdates.length > 0 ? 1 : 0,
-          }}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          aria-pressed={activeOnlyUpdatable}
+          disabled={isUpdatingAll}
+          onClick={handleToggleOnlyUpdatable}
+          className={cn(
+            "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors disabled:opacity-60",
+            activeOnlyUpdatable
+              ? "border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300"
+              : "border-border bg-background text-muted-foreground hover:border-sky-500/30 hover:text-foreground",
+          )}
         >
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1 whitespace-nowrap disabled:opacity-100"
-            onClick={handleUpdateAll}
-            disabled={interactionBlocked}
-          >
-            {isUpdatingAll ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <RefreshCw size={12} />
-            )}
-            {isUpdatingAll
+          {t("skills.updateNotice.onlyUpdatable")}
+        </button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 border-sky-500/35 bg-sky-500/10 px-2.5 text-xs font-semibold tabular-nums text-sky-700 hover:bg-sky-500/20 disabled:opacity-80 dark:text-sky-300"
+          onClick={handleUpdateAll}
+          disabled={interactionBlocked}
+        >
+          {isUpdatingAll ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
+          {isUpdatingAll && updateProgress
+            ? t("skills.updateNotice.updatingProgress", updateProgress)
+            : isUpdatingAll
               ? t("skills.updatingAll")
               : t("skills.updateAll", {
                   count: applicableSkillUpdates.length,
                 })}
-          </Button>
-        </div>
+        </Button>
+        {!isUpdatingAll && (
+          <button
+            type="button"
+            onClick={() => {
+              setUpdateNoticeDismissed(true);
+              setOnlyUpdatableFilter(false);
+            }}
+            title={t("skills.updateNotice.dismiss")}
+            aria-label={t("skills.updateNotice.dismiss")}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
+
+      {isUpdatingAll && updateProgress && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-sky-500/15"
+        >
+          <div
+            className="h-full bg-sky-500 transition-all duration-300 ease-out"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
+      <AppCountBar
+        totalLabel=""
+        leading={
+          <div
+            className="inline-flex h-8 shrink-0 gap-0.5 rounded-lg border border-border-default bg-muted/60 p-0.5"
+            role="group"
+            aria-label={t("skills.usage.range")}
+          >
+            {(["day", "week"] as const).map((range) => (
+              <button
+                key={range}
+                type="button"
+                aria-pressed={usageRange === range}
+                onClick={() => setUsageRange(range)}
+                className={cn(
+                  "rounded-md px-2.5 text-xs transition-colors",
+                  usageRange === range
+                    ? "bg-background font-semibold text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t(
+                  range === "day" ? "skills.usage.today" : "skills.usage.week",
+                )}{" "}
+                <span className="font-semibold tabular-nums">
+                  {usageTotal(usage.data?.snapshots?.[range]) ?? "…"}
+                </span>{" "}
+                {t("skills.usage.times")}
+              </button>
+            ))}
+          </div>
+        }
+        countsLabel={<span>{t("skills.usage.enabledCallsLabel")}</span>}
+        formatCount={(app, count) => {
+          const supported = app in skillUsageColor;
+          const zeroCalls = !supported || (agentUsageTotals?.[app] ?? 0) === 0;
+          return (
+            <>
+              <span>{count}</span>
+              <span className="font-normal text-muted-foreground/50">/</span>
+              <span
+                className={cn(
+                  zeroCalls && "font-medium opacity-65",
+                  !supported && "text-muted-foreground/75",
+                )}
+              >
+                {agentUsageLabel(app)}
+              </span>
+            </>
+          );
+        }}
+        getCountDescription={(app, count) =>
+          [
+            t("skills.usage.enabledForApp", {
+              app: APP_ICON_MAP[app].label,
+              count,
+            }),
+            t(
+              usageRange === "day" ? "skills.usage.today" : "skills.usage.week",
+            ) +
+              ": " +
+              agentUsageLabel(app),
+          ].join("\n")
+        }
+        counts={enabledCounts}
+        appIds={visibleSkillAppIds}
+        totalCount={filteredSkills.length}
+        onToggleAll={handleToggleAll}
+        pendingApp={pendingApp}
+        disabled={interactionBlocked}
+      />
 
       <div className="mb-4 flex flex-shrink-0 flex-wrap items-center gap-2">
         <ManagementListSearch
@@ -1062,14 +1269,23 @@ const UnifiedSkillsPanel = React.forwardRef<
           placeholder={t("skills.installedSearchPlaceholder")}
           ariaLabel={t("skills.installedSearchAriaLabel")}
           clearLabel={t("common.clear")}
-          className="mb-0 min-w-48 flex-1"
+          className="mb-0 min-w-52 flex-1"
+          inputClassName="h-9 rounded-lg text-[13px]"
         />
         <Select value={activeSourceFilter} onValueChange={setSourceFilter}>
           <SelectTrigger
             aria-label={t("skills.filter.repo")}
-            className="w-44 shrink-0"
+            className="h-9 w-auto min-w-[116px] max-w-[210px] shrink-0 gap-2 rounded-lg px-2.5 text-[12.5px] font-medium tabular-nums"
           >
-            <SelectValue />
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <Filter
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75"
+                aria-hidden="true"
+              />
+              <span className="truncate">
+                <SelectValue />
+              </span>
+            </span>
           </SelectTrigger>
           <SelectContent className="max-h-64">
             <SelectItem value="all">
@@ -1105,9 +1321,15 @@ const UnifiedSkillsPanel = React.forwardRef<
         <Select value={sortOrder} onValueChange={setSortOrder}>
           <SelectTrigger
             aria-label={t("skills.usage.sort")}
-            className="w-32 shrink-0"
+            className="h-9 w-auto min-w-[104px] shrink-0 gap-2 rounded-lg px-2.5 text-[12.5px] font-medium"
           >
-            <SelectValue />
+            <span className="inline-flex items-center gap-1.5">
+              <ArrowUpDown
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75"
+                aria-hidden="true"
+              />
+              <SelectValue />
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="name">{t("skills.usage.sortName")}</SelectItem>
@@ -1119,7 +1341,7 @@ const UnifiedSkillsPanel = React.forwardRef<
           </SelectContent>
         </Select>
         <div
-          className="inline-flex h-9 w-36 shrink-0 items-center gap-0.5 rounded-lg border border-border/50 bg-muted/50 p-1"
+          className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-lg border border-border-default bg-muted/50 p-0.5"
           role="group"
           aria-label="模式切换"
         >
@@ -1128,9 +1350,9 @@ const UnifiedSkillsPanel = React.forwardRef<
             aria-pressed={usageMode === "count"}
             onClick={() => setUsageMode("count")}
             className={cn(
-              "flex-1 h-full rounded-md px-2 text-xs transition-colors flex items-center justify-center",
+              "flex h-full items-center justify-center whitespace-nowrap rounded-md px-2.5 text-xs transition-colors",
               usageMode === "count"
-                ? "bg-background font-medium text-foreground shadow-sm"
+                ? "bg-blue-50 font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/30"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -1141,13 +1363,21 @@ const UnifiedSkillsPanel = React.forwardRef<
             aria-pressed={usageMode === "tokens"}
             onClick={() => setUsageMode("tokens")}
             className={cn(
-              "flex-1 h-full rounded-md px-2 text-xs transition-colors flex items-center justify-center gap-1",
+              "flex h-full items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5 text-xs transition-colors",
               usageMode === "tokens"
-                ? "bg-purple-50 font-medium text-purple-700 ring-1 ring-inset ring-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/30"
+                ? "bg-purple-50 font-semibold text-purple-700 ring-1 ring-inset ring-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/30"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            <span>⚡</span>
+            <Zap
+              className={cn(
+                "h-3 w-3 shrink-0",
+                usageMode === "tokens"
+                  ? "text-purple-600 dark:text-purple-300"
+                  : "text-muted-foreground",
+              )}
+              aria-hidden="true"
+            />
             <span>{t("skills.usage.modeTokens", "Token")}</span>
           </button>
         </div>
@@ -1201,17 +1431,25 @@ const UnifiedSkillsPanel = React.forwardRef<
               </div>
             </div>
           ) : filteredSkills.length === 0 ? (
-            pluginUsageGroups.length > 0 ? null : (
-              <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                <Search className="mb-4 h-10 w-10 opacity-40" />
-                <p className="text-sm">
-                  {t("skills.noInstalledSearchResults")}
-                </p>
-              </div>
-            )
+            <>
+              {updateNoticeSlot && (
+                <div className="mb-4 rounded-xl border border-border-default overflow-hidden">
+                  {updateNoticeSlot}
+                </div>
+              )}
+              {pluginUsageGroups.length > 0 ? null : (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                  <Search className="mb-4 h-10 w-10 opacity-40" />
+                  <p className="text-sm">
+                    {t("skills.noInstalledSearchResults")}
+                  </p>
+                </div>
+              )}
+            </>
           ) : (
             <TooltipProvider delayDuration={300}>
               <div className="rounded-xl border border-border-default overflow-hidden">
+                {updateNoticeSlot}
                 {sortedSkills.map((skill, index) => (
                   <InstalledSkillListItem
                     key={skill.id}
@@ -1243,8 +1481,11 @@ const UnifiedSkillsPanel = React.forwardRef<
                       ]
                     }
                     onToggleApp={handleToggleApp}
-                    onUninstall={() => handleUninstall(skill)}
+                    onUninstall={() => void handleUninstall(skill)}
                     onPreview={() => setPreviewSkill(skill)}
+                    onDeployToProject={() =>
+                      setDeployProjectSkillIds([skill.id])
+                    }
                     onUpdate={() => handleUpdateSkill(skill)}
                     isLast={index === sortedSkills.length - 1}
                   />
@@ -1466,10 +1707,22 @@ const UnifiedSkillsPanel = React.forwardRef<
           message={confirmDialog.message}
           confirmText={confirmDialog.confirmText}
           variant={confirmDialog.variant}
+          checkboxLabel={confirmDialog.checkboxLabel}
+          checkboxDefaultChecked={confirmDialog.checkboxDefaultChecked}
           zIndex="top"
           pending={writePending}
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
+        />
+      )}
+
+      {deployProjectSkillIds !== null && (
+        <DeployToProjectDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setDeployProjectSkillIds(null);
+          }}
+          initialSkillIds={deployProjectSkillIds}
         />
       )}
 
@@ -1534,6 +1787,7 @@ interface InstalledSkillListItemProps {
   onToggleApp: (id: string, app: AppId, enabled: boolean) => void;
   onUninstall: () => void;
   onPreview: () => void;
+  onDeployToProject?: () => void;
   onUpdate?: () => void;
   isLast?: boolean;
 }
@@ -1553,6 +1807,7 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   onToggleApp,
   onUninstall,
   onPreview,
+  onDeployToProject,
   onUpdate,
   isLast,
 }) => {
@@ -1565,11 +1820,40 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   const usageByApp = Object.fromEntries(
     appIds.map((app) => {
       const record = usageRecords.find((record) => record.app === app);
-      const supported = app === "claude" || app === "codex";
+      const supported = app in skillUsageColor;
+      const appTokens = record
+        ? (record.inputTokens ?? 0) + (record.outputTokens ?? 0)
+        : 0;
+      const emptyLabel = !supported
+        ? t("skills.usage.unsupported")
+        : usageStatus?.error
+          ? t("skills.usage.incomplete")
+          : !usageStatus?.completed
+            ? t("skills.usage.scanning")
+            : t(
+                usageRange === "day"
+                  ? "skills.usage.unusedToday"
+                  : "skills.usage.unusedWeek",
+              );
+      const lastUsed = record
+        ? new Date(record.lastUsed * 1000).toLocaleString()
+        : undefined;
       return [
         app,
         {
           count: record?.count ?? 0,
+          sessions: record?.sessions,
+          manualCount: record?.manualCount,
+          agentCount: record?.agentCount,
+          tokens: appTokens,
+          lastUsed,
+          warning:
+            record && !skill.apps[app]
+              ? t("skills.usage.disabledWithUsage")
+              : undefined,
+          note:
+            record && app === "codex" ? t("skills.usage.estimated") : undefined,
+          emptyLabel: record ? undefined : emptyLabel,
           label: !supported
             ? t("skills.usage.unsupported")
             : [
@@ -1580,18 +1864,10 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
                       manual: record.manualCount,
                       agent: record.agentCount,
                     })
-                  : usageStatus?.error
-                    ? t("skills.usage.incomplete")
-                    : !usageStatus?.completed
-                      ? t("skills.usage.scanning")
-                      : t(
-                          usageRange === "day"
-                            ? "skills.usage.unusedToday"
-                            : "skills.usage.unusedWeek",
-                        ),
-                record
+                  : emptyLabel,
+                lastUsed
                   ? t("skills.usage.lastUsed", {
-                      time: new Date(record.lastUsed * 1000).toLocaleString(),
+                      time: lastUsed,
                     })
                   : "",
                 record && !skill.apps[app]
@@ -1644,10 +1920,17 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
           {skillTotalTokens > 0 && (
             <Badge
               variant="outline"
-              className="shrink-0 text-[10px] px-1.5 py-0 h-4 border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400 font-normal"
-              title={`关联总 Token: ${skillTotalTokens.toLocaleString()}`}
+              className="h-4 shrink-0 gap-0.5 border-purple-500/30 bg-purple-500/10 px-1.5 py-0 text-[10px] font-normal tabular-nums text-purple-600 dark:text-purple-400"
+              title={t("skills.usage.tokenRowTitle", {
+                range:
+                  usageRange === "day"
+                    ? t("skills.usage.today")
+                    : t("skills.usage.week"),
+                value: skillTotalTokens.toLocaleString(),
+              })}
             >
-              ⚡ {formatTokens(skillTotalTokens)}
+              <Zap className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+              {formatTokens(skillTotalTokens)}
             </Badge>
           )}
           {hasUpdate && (
@@ -1705,6 +1988,20 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
         >
           <Eye size={14} />
         </Button>
+        {onDeployToProject && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            disabled={actionsDisabled}
+            onClick={onDeployToProject}
+            title={t("projects.deploySkill")}
+            aria-label={t("projects.deploySkill")}
+          >
+            <FolderGit2 size={14} />
+          </Button>
+        )}
         {hasUpdate && onUpdate && (
           <Button
             type="button"

@@ -1,6 +1,16 @@
 import type { SkillUsageRange, SkillUsageSnapshot } from "@/lib/api/skills";
 import type { AppId } from "@/lib/api/types";
 
+export function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(1)}k`;
+  }
+  return tokens.toLocaleString();
+}
+
 export function skillUsageTotals(
   snapshot: SkillUsageSnapshot | undefined,
   skillNames: ReadonlySet<string>,

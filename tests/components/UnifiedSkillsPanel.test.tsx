@@ -217,7 +217,10 @@ const makeInstalledSkill = (
 const appCountControl = (app: string) =>
   screen
     .getAllByRole("checkbox")
-    .find((element) => element.textContent?.startsWith(`${app}:`))!;
+    .find(
+      (element) =>
+        element.querySelector("[data-app-label]")?.textContent === app,
+    )!;
 
 const renderPanel = () =>
   render(<UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />);
@@ -463,6 +466,49 @@ describe("UnifiedSkillsPanel", () => {
         enabled: true,
       }),
     );
+  });
+
+  it("uses purple theme in Token mode and reports real usage for Antigravity", async () => {
+    installedSkillsMock = [
+      makeInstalledSkill({ apps: { antigravity: true } }),
+    ];
+    usageDataMock.day!.records = [
+      {
+        skillName: "alpha-skill",
+        app: "antigravity",
+        count: 3,
+        sessions: 1,
+        lastUsed: Math.floor(new Date(2026, 9, 17, 10, 0).getTime() / 1000),
+        manualCount: 1,
+        agentCount: 2,
+        buckets: [3, ...Array(11).fill(0)],
+        inputTokens: 460000,
+        outputTokens: 5400,
+        cacheReadTokens: 0,
+        tokenBuckets: [465400, ...Array(11).fill(0)],
+      },
+    ];
+
+    renderPanel();
+    const user = userEvent.setup();
+    const antigravity = screen.getByRole("button", { name: "Antigravity" });
+    await user.hover(antigravity);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Antigravity");
+    expect(tooltip).toHaveTextContent("skills.usage.statusEnabled");
+    expect(tooltip).toHaveTextContent("skills.usage.callsSessions");
+    expect(tooltip).toHaveTextContent("skills.usage.sessionCount");
+    expect(tooltip).toHaveTextContent("465.4k");
+    expect(tooltip).toHaveTextContent("skills.usage.lastUsedLabel");
+    expect(tooltip).not.toHaveTextContent("skills.usage.unsupported");
+    await user.unhover(antigravity);
+
+    const tokenModeBtn = screen.getByRole("button", { name: "Token" });
+    await user.click(tokenModeBtn);
+    expect(tokenModeBtn).toHaveClass("bg-purple-50", "text-purple-700");
+    const tokenLabels = screen.getAllByText("465.4k");
+    expect(tokenLabels[0]).toHaveClass("text-purple-600");
+    expect(tokenLabels[1].closest("span")).toHaveClass("text-purple-700");
   });
 
   it("excludes hidden plugin Skills from totals and group charts after searching", async () => {
@@ -1512,6 +1558,56 @@ describe("UnifiedSkillsPanel", () => {
       expect(updateSkillMock).toHaveBeenCalledTimes(1);
       expect(updateSkillMock).toHaveBeenCalledWith("installed-id");
     });
+  });
+
+  it("filters updatable skills, collapses overflow chips, and restores dismissed update notice on re-check", async () => {
+    installedSkillsMock = [
+      makeInstalledSkill({ id: "s1", name: "Alpha", directory: "s1" }),
+      makeInstalledSkill({ id: "s2", name: "Beta", directory: "s2" }),
+      makeInstalledSkill({ id: "s3", name: "Gamma", directory: "s3" }),
+      makeInstalledSkill({ id: "s4", name: "Delta", directory: "s4" }),
+      makeInstalledSkill({ id: "s5", name: "Epsilon", directory: "s5" }),
+    ];
+    skillUpdatesMock = [
+      { id: "s1", name: "Alpha", remoteHash: "h1" },
+      { id: "s2", name: "Beta", remoteHash: "h2" },
+      { id: "s3", name: "Gamma", remoteHash: "h3" },
+      { id: "s4", name: "Delta", remoteHash: "h4" },
+    ];
+    const ref = createRef<UnifiedSkillsPanelHandle>();
+    render(
+      <UnifiedSkillsPanel
+        ref={ref}
+        onOpenDiscovery={() => {}}
+        currentApp="claude"
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(
+      screen.getByRole("button", { name: "skills.updateNotice.moreCount" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "skills.updateNotice.onlyUpdatable" }),
+    );
+    expect(screen.queryByText("Epsilon")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "skills.updateNotice.dismiss" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "skills.updateAll" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Epsilon")).toBeInTheDocument();
+
+    checkUpdatesMock.mockResolvedValueOnce({ data: skillUpdatesMock });
+    await act(async () => {
+      ref.current?.checkUpdates();
+    });
+    expect(
+      await screen.findByRole("button", { name: "skills.updateAll" }),
+    ).toBeInTheDocument();
   });
 
   it("waits for an explicit backup refresh before reporting deletion failure", async () => {

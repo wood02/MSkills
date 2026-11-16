@@ -93,6 +93,10 @@ const SYNC_SKIP_TABLES: &[&str] = &[
     "usage_daily_rollups",
     "session_log_sync",
     "session_usage_dedup",
+    "projects",
+    "project_skill_deployments",
+    "project_rule_snapshots",
+    "skill_operation_journal",
 ];
 
 /// Tables whose local data is preserved from the live database during WebDAV import.
@@ -106,7 +110,34 @@ const SYNC_PRESERVE_TABLES: &[&str] = &[
     "usage_daily_rollups",
     "session_log_sync",
     "session_usage_dedup",
+    "projects",
+    "project_skill_deployments",
+    "project_rule_snapshots",
+    "skill_operation_journal",
 ];
+
+/// Tables preserved locally during `.db` / `.sql` database-config-only restore so local
+/// SSOT skills, skill groups, project deployments, rules snapshots, and operation journals
+/// never drift out of sync with on-disk files.
+const DB_ONLY_RESTORE_PRESERVE_TABLES: &[&str] = &[
+    "skills",
+    "skill_groups",
+    "projects",
+    "project_skill_deployments",
+    "project_rule_snapshots",
+    "skill_operation_journal",
+];
+
+pub const RESTORE_SCOPE_DATABASE_CONFIG_ONLY: &str = "database_config_only";
+
+/// Structured restore metadata returned for database-only `.db` / `.sql` restores.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRestoreReport {
+    pub backup_id: String,
+    pub restore_scope: String,
+    pub warnings: Vec<String>,
+}
 
 /// A database backup entry for the UI
 #[derive(Debug, serde::Serialize)]
@@ -155,29 +186,121 @@ impl Database {
         self.import_sql_string(sql_content)
     }
 
-    /// 从 SQL 字符串导入，返回生成的备份 ID（若无备份则为空字符串）
+    pub fn database_only_restore_warnings() -> Vec<String> {
+        vec![AppError::localized(
+            "backup.restore.scope_database_only_notice",
+            "仅恢复数据库配置：本机 Skills 目录、项目部署记录及项目 Rules 快照已保留，未包含在 .db/.sql 恢复范围内。如需跨设备含 Skills 包体恢复，请使用 WebDAV 或 S3 云同步。",
+            "Database configuration only: local Skills files, project deployments, and project rule snapshots were preserved. Use WebDAV/S3 cloud sync to restore full Skills packages across devices.",
+        )
+        .to_string()]
+    }
+
+    /// 从 SQL 字符串导入，返回生成的备份 ID（若无备份则为空字符串）。
+    /// 默认保留本机 Skill 子系统与状态键（仅数据库配置恢复语义）。
     pub fn import_sql_string(&self, sql_raw: &str) -> Result<String, AppError> {
-        self.import_sql_string_inner(sql_raw, &[])
+        self.import_sql_string_inner_with_options(
+            sql_raw,
+            DB_ONLY_RESTORE_PRESERVE_TABLES,
+            true,
+            || Ok(()),
+        )
     }
 
     /// Import SQL generated for sync, then restore local-only tables from the
     /// current live database before replacing it.
     pub(crate) fn import_sql_string_for_sync(&self, sql_raw: &str) -> Result<String, AppError> {
-        self.import_sql_string_inner(sql_raw, SYNC_PRESERVE_TABLES)
+        self.import_sql_string_inner_with_options(sql_raw, SYNC_PRESERVE_TABLES, false, || Ok(()))
     }
 
-    fn import_sql_string_inner(
+    /// 在独立临时库上解析并迁移同步 SQL，提取迁移后的 `skills` 列表，用于同步前包体预检。
+    pub(crate) fn preview_skills_from_sql_for_sync(
         &self,
         sql_raw: &str,
-        preserve_tables: &[&str],
-    ) -> Result<String, AppError> {
-        self.import_sql_string_inner_with_hook(sql_raw, preserve_tables, || Ok(()))
+    ) -> Result<Vec<crate::app_config::InstalledSkill>, AppError> {
+        let sql_content = sql_raw.trim_start_matches('\u{feff}');
+        Self::validate_mskills_sql_export(sql_content)?;
+
+        let temp_file = NamedTempFile::new().map_err(|e| AppError::IoContext {
+            context: "创建同步预检临时数据库失败".to_string(),
+            source: e,
+        })?;
+        let temp_conn =
+            Connection::open(temp_file.path()).map_err(|e| AppError::Database(e.to_string()))?;
+        temp_conn.authorizer(Some(import_authorizer));
+        let batch_result = temp_conn.execute_batch(sql_content);
+        temp_conn.authorizer(
+            None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
+        );
+        batch_result.map_err(|e| AppError::Database(format!("执行同步预检 SQL 失败: {e}")))?;
+        Self::validate_imported_schema(&temp_conn)?;
+        Self::create_tables_on_conn(&temp_conn)?;
+        Self::apply_schema_migrations_on_conn(&temp_conn)?;
+        Self::backfill_missing_skill_installation_ids(&temp_conn)?;
+
+        let mut stmt = temp_conn
+            .prepare(
+                "SELECT id, installation_id, name, description, directory, repo_owner, repo_name, repo_branch,
+                        readme_url, enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild,
+                        enabled_opencode, enabled_hermes, installed_at, content_hash, updated_at, enabled_mcode, enabled_dsh, enabled_antigravity
+                 FROM skills ORDER BY directory ASC",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let iter = stmt
+            .query_map([], |row| {
+                Ok(crate::app_config::InstalledSkill {
+                    id: row.get(0)?,
+                    installation_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    directory: row.get(4)?,
+                    repo_owner: row.get(5)?,
+                    repo_name: row.get(6)?,
+                    repo_branch: row.get(7)?,
+                    readme_url: row.get(8)?,
+                    apps: crate::app_config::SkillApps {
+                        claude: row.get(9)?,
+                        codex: row.get(10)?,
+                        gemini: row.get(11)?,
+                        antigravity: row.get(20)?,
+                        grokbuild: row.get(12)?,
+                        opencode: row.get(13)?,
+                        hermes: row.get(14)?,
+                        pi: false,
+                        mcode: row.get(18)?,
+                        dsh: row.get(19)?,
+                    },
+                    installed_at: row.get(15)?,
+                    content_hash: row.get(16)?,
+                    updated_at: row.get::<_, i64>(17).unwrap_or(0),
+                })
+            })
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let mut skills = Vec::new();
+        for row in iter {
+            skills.push(row.map_err(|e| AppError::Database(e.to_string()))?);
+        }
+        Ok(skills)
     }
 
+    #[cfg(test)]
     fn import_sql_string_inner_with_hook<F>(
         &self,
         sql_raw: &str,
         preserve_tables: &[&str],
+        on_staging_ready: F,
+    ) -> Result<String, AppError>
+    where
+        F: FnOnce() -> Result<(), AppError>,
+    {
+        self.import_sql_string_inner_with_options(sql_raw, preserve_tables, false, on_staging_ready)
+    }
+
+    fn import_sql_string_inner_with_options<F>(
+        &self,
+        sql_raw: &str,
+        preserve_tables: &[&str],
+        preserve_local_skill_settings: bool,
         on_staging_ready: F,
     ) -> Result<String, AppError>
     where
@@ -226,6 +349,7 @@ impl Database {
         // 补齐缺失表/索引并执行迁移
         Self::create_tables_on_conn(&temp_conn)?;
         Self::apply_schema_migrations_on_conn(&temp_conn)?;
+        Self::backfill_missing_skill_installation_ids(&temp_conn)?;
         on_staging_ready()?;
 
         let backup_file_guard = lock_backup_file_operations()?;
@@ -239,6 +363,9 @@ impl Database {
             let pre_prompts = Self::read_enabled_prompt_contents_by_app(&main_conn)?;
             if !preserve_tables.is_empty() {
                 Self::restore_tables(&main_conn, &temp_conn, preserve_tables)?;
+            }
+            if preserve_local_skill_settings {
+                Self::restore_local_skill_settings(&main_conn, &temp_conn)?;
             }
             let backup = Backup::new(&temp_conn, &mut main_conn)
                 .map_err(|e| AppError::Database(e.to_string()))?;
@@ -370,6 +497,138 @@ impl Database {
 
         tx.commit()
             .map_err(|e| AppError::Database(format!("提交恢复事务失败: {e}")))?;
+        Ok(())
+    }
+
+    fn backfill_missing_skill_installation_ids(conn: &Connection) -> Result<(), AppError> {
+        if !Self::table_exists(conn, "skills")?
+            || !Self::has_column(conn, "skills", "installation_id")?
+        {
+            return Ok(());
+        }
+        let rows = {
+            let mut stmt = conn
+                .prepare("SELECT id, installation_id FROM skills ORDER BY rowid ASC")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let iter = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+                })
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let mut out = Vec::new();
+            for r in iter {
+                out.push(r.map_err(|e| AppError::Database(e.to_string()))?);
+            }
+            out
+        };
+        let mut seen = std::collections::HashSet::new();
+        for (skill_id, cur) in rows {
+            let valid = cur
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && uuid::Uuid::parse_str(s).is_ok())
+                .map(str::to_string);
+            let final_id = match valid {
+                Some(existing) if seen.insert(existing.clone()) => existing,
+                _ => loop {
+                    let cand = uuid::Uuid::new_v4().to_string();
+                    if seen.insert(cand.clone()) {
+                        break cand;
+                    }
+                },
+            };
+            if cur.as_deref() != Some(final_id.as_str()) {
+                conn.execute(
+                    "UPDATE skills SET installation_id = ?1 WHERE id = ?2",
+                    rusqlite::params![final_id, skill_id],
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn restore_local_skill_settings(
+        source_conn: &Connection,
+        target_conn: &Connection,
+    ) -> Result<(), AppError> {
+        if !Self::table_exists(source_conn, "settings")?
+            || !Self::table_exists(target_conn, "settings")?
+        {
+            return Ok(());
+        }
+
+        // Preserve current_skill_group_id_* unconditionally
+        target_conn
+            .execute(
+                "DELETE FROM settings WHERE key LIKE 'current_skill_group_id_%'",
+                [],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        {
+            let mut stmt = source_conn
+                .prepare(
+                    "SELECT key, value FROM settings WHERE key LIKE 'current_skill_group_id_%'",
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let mut rows = stmt
+                .query([])
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            while let Some(row) = rows.next().map_err(|e| AppError::Database(e.to_string()))? {
+                let k: String = row.get(0).map_err(|e| AppError::Database(e.to_string()))?;
+                let v: Option<String> =
+                    row.get(1).map_err(|e| AppError::Database(e.to_string()))?;
+                target_conn
+                    .execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                        rusqlite::params![k, v],
+                    )
+                    .map_err(|e| AppError::Database(e.to_string()))?;
+            }
+        }
+
+        // For skills_ssot_migration_* keys: preserve local state whenever local DB already owns
+        // skills or migration keys; leave imported v1 migration snapshot intact on fresh empty DBs.
+        let local_has_skills: bool = Self::table_exists(source_conn, "skills")?
+            && source_conn
+                .query_row("SELECT EXISTS(SELECT 1 FROM skills)", [], |row| row.get(0))
+                .unwrap_or(false);
+        let local_has_migration_keys: bool = source_conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM settings WHERE key IN ('skills_ssot_migration_pending', 'skills_ssot_migration_snapshot'))",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if local_has_skills || local_has_migration_keys {
+            target_conn
+                .execute(
+                    "DELETE FROM settings WHERE key IN ('skills_ssot_migration_pending', 'skills_ssot_migration_snapshot')",
+                    [],
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let mut stmt = source_conn
+                .prepare(
+                    "SELECT key, value FROM settings WHERE key IN ('skills_ssot_migration_pending', 'skills_ssot_migration_snapshot')",
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let mut rows = stmt
+                .query([])
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            while let Some(row) = rows.next().map_err(|e| AppError::Database(e.to_string()))? {
+                let k: String = row.get(0).map_err(|e| AppError::Database(e.to_string()))?;
+                let v: Option<String> =
+                    row.get(1).map_err(|e| AppError::Database(e.to_string()))?;
+                target_conn
+                    .execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                        rusqlite::params![k, v],
+                    )
+                    .map_err(|e| AppError::Database(e.to_string()))?;
+            }
+        }
+
         Ok(())
     }
 
@@ -1011,6 +1270,19 @@ impl Database {
         self.restore_from_backup_with_hook(filename, |_| Ok(()))
     }
 
+    /// Restore database from a backup file and return structured scope + warning metadata.
+    pub fn restore_from_backup_with_report(
+        &self,
+        filename: &str,
+    ) -> Result<DatabaseRestoreReport, AppError> {
+        let backup_id = self.restore_from_backup(filename)?;
+        Ok(DatabaseRestoreReport {
+            backup_id,
+            restore_scope: RESTORE_SCOPE_DATABASE_CONFIG_ONLY.to_string(),
+            warnings: Self::database_only_restore_warnings(),
+        })
+    }
+
     fn restore_from_backup_with_hook<F>(
         &self,
         filename: &str,
@@ -1069,6 +1341,7 @@ impl Database {
         Self::ensure_incremental_auto_vacuum_on_conn(&staging_conn)?;
         Self::create_tables_on_conn(&staging_conn)?;
         Self::apply_schema_migrations_on_conn(&staging_conn)?;
+        Self::backfill_missing_skill_installation_ids(&staging_conn)?;
         Self::ensure_model_pricing_seeded_on_conn(&staging_conn)?;
         Self::validate_sqlite_integrity(&staging_conn)?;
 
@@ -1083,6 +1356,8 @@ impl Database {
             )?;
             let pre_prompts = Self::read_enabled_prompt_contents_by_app(&main_conn)?;
             before_replace(safety_backup.as_deref())?;
+            Self::restore_tables(&main_conn, &staging_conn, DB_ONLY_RESTORE_PRESERVE_TABLES)?;
+            Self::restore_local_skill_settings(&main_conn, &staging_conn)?;
             let backup = Backup::new(&staging_conn, &mut main_conn)
                 .map_err(|e| AppError::Database(e.to_string()))?;
             Self::complete_backup(&backup, "恢复主数据库")?;
