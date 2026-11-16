@@ -408,7 +408,12 @@ pub fn copy_validated_skill_tree(src_dir: &Path, dst_dir: &Path) -> Result<Strin
                 CollectedEntry::Dir => {
                     fs::create_dir_all(&target)?;
                 }
-                CollectedEntry::File { mode, abs_path, .. } => {
+                CollectedEntry::File {
+                    #[cfg(unix)]
+                    mode,
+                    abs_path,
+                    ..
+                } => {
                     if let Some(parent) = target.parent() {
                         fs::create_dir_all(parent)?;
                     }
@@ -892,7 +897,7 @@ mod windows_impl {
 
         unsafe {
             let info_ptr = buf.as_mut_ptr() as *mut FILE_RENAME_INFO;
-            (*info_ptr).Anonymous.ReplaceIfExists = 0;
+            (*info_ptr).Anonymous.ReplaceIfExists = false;
             (*info_ptr).RootDirectory = std::ptr::null_mut();
             (*info_ptr).FileNameLength = name_bytes as u32;
             std::ptr::copy_nonoverlapping(

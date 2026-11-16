@@ -329,7 +329,8 @@ pub fn deploy_skills_to_project(
             let mut actual_mat_hash: Option<String> = None;
 
             if use_relative_alias {
-                let rel_target = PathBuf::from("../..")
+                let rel_target = PathBuf::from("..")
+                    .join("..")
                     .join(".agents")
                     .join("skills")
                     .join(&directory);
@@ -696,7 +697,8 @@ pub fn promote_claude_deployment(
     let backup_claude_old = stage_claude_root.join("bak");
 
     let agents_mat_fp = copy_validated_skill_tree(&claude_dir, &staged_agents_new)?;
-    let rel_target = PathBuf::from("../..")
+    let rel_target = PathBuf::from("..")
+        .join("..")
         .join(".agents")
         .join("skills")
         .join(&directory);

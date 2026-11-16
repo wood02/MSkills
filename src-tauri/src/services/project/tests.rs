@@ -20,7 +20,7 @@ use crate::services::project::scan::{scan_project, ProjectSkillStatus};
 use crate::services::webdav_sync::archive::{
     restore_skills_zip_verified, zip_skills_ssot_with_manifest,
 };
-use crate::{AppError, Prompt};
+use crate::Prompt;
 use serial_test::serial;
 use std::fs;
 use std::process::Command;
@@ -216,7 +216,11 @@ fn deploy_dual_target_copy_relative_alias_update_push_and_diff() {
     );
     assert_eq!(
         fs::read_link(&claude_path).unwrap(),
-        PathBuf::from("../../.agents/skills/alpha")
+        PathBuf::from("..")
+            .join("..")
+            .join(".agents")
+            .join("skills")
+            .join("alpha")
     );
 
     // Scan 应均处于 Synced，且触发 Claude 同名折叠提示而不触发冲突告警
