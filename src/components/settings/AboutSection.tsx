@@ -42,6 +42,7 @@ import { isWindows } from "@/lib/platform";
 import { isUpdateAvailable } from "@/lib/version";
 import { ToolUpgradeConfirmDialog } from "./ToolUpgradeConfirmDialog";
 import { ToolInstallRow } from "./ToolInstallRow";
+import { SkillMarkdownPreview } from "@/components/skills/SkillMarkdownPreview";
 
 interface AboutSectionProps {
   isPortable: boolean;
@@ -1018,9 +1019,11 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               })}
             </p>
             {updateInfo.notes && (
-              <p className="text-muted-foreground line-clamp-3 leading-relaxed">
-                {updateInfo.notes}
-              </p>
+              <SkillMarkdownPreview
+                content={updateInfo.notes}
+                compact
+                className="mt-1.5 max-h-48 overflow-y-auto pr-1"
+              />
             )}
             {(isPortable || updateInfo.manualInstall) && (
               <p className="mt-2 text-muted-foreground">

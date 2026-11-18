@@ -244,6 +244,9 @@ export type SkillSyncMethod = "auto" | "symlink" | "copy";
 // Skill 存储位置
 export type SkillStorageLocation = "cc_switch" | "unified";
 
+// Skills 周统计口径：rolling_7d（滚动近 7 天）| calendar_week（本周自然周）
+export type SkillUsageWeekMode = "rolling_7d" | "calendar_week";
+
 // Claude API 格式类型
 // - "anthropic": 原生 Anthropic Messages API 格式，直接透传
 // - "openai_chat": OpenAI Chat Completions 格式，需要格式转换
@@ -447,6 +450,8 @@ export interface Settings {
   skillSyncMethod?: SkillSyncMethod;
   // Skill 存储位置：mskills（默认）或 unified（~/.agents/skills/）
   skillStorageLocation?: SkillStorageLocation;
+  // Skills 调用量/Token 周统计口径：rolling_7d（近 7 天）或 calendar_week（本周）
+  skillUsageWeekMode?: SkillUsageWeekMode;
 
   // ===== WebDAV v2 同步设置 =====
   webdavSync?: WebDavSyncSettings;

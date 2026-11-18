@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useIsMutating } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowLeftRight,
   ArrowUpCircle,
   ArrowUpDown,
   Filter,
@@ -20,13 +21,20 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Portal as TooltipPortal } from "@radix-ui/react-tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   type ImportSkillSelection,
   type SkillBackupEntry,
   useDeleteSkillBackup,
   useInstalledSkills,
   useSkillUsage,
+  useSkillUsageWeekMode,
   usePluginStates,
   useTogglePlugin,
   useSkillBackups,
@@ -45,7 +53,7 @@ import {
 } from "@/hooks/useSkills";
 import { useViewState } from "@/hooks/useViewState";
 import type { AppId } from "@/lib/api/types";
-import type { VisibleApps } from "@/types";
+import type { SkillUsageWeekMode, VisibleApps } from "@/types";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi, skillsApi } from "@/lib/api";
@@ -58,6 +66,7 @@ import { ListItemRow } from "@/components/common/ListItemRow";
 import { ManagementListSearch } from "@/components/common/ManagementListSearch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SkillDocumentPanel } from "./SkillDocumentPanel";
+import { SkillDescription } from "./SkillDescription";
 import {
   Dialog,
   DialogContent,
@@ -200,7 +209,31 @@ const UnifiedSkillsPanel = React.forwardRef<
     "skills.usageMode",
     "count",
   );
-  const usage = useSkillUsage();
+  const { weekMode, toggleWeekMode } = useSkillUsageWeekMode();
+  const weekLabelKey =
+    weekMode === "calendar_week"
+      ? "skills.usage.calendarWeek"
+      : "skills.usage.week";
+  const usage = useSkillUsage(weekMode);
+  const handleToggleWeekMode = async () => {
+    try {
+      const nextMode = await toggleWeekMode();
+      setUsageRange("week");
+      toast.success(
+        t("skills.usage.weekModeSwitched", {
+          mode: t(
+            nextMode === "calendar_week"
+              ? "skills.usage.calendarWeek"
+              : "skills.usage.week",
+          ),
+        }),
+      );
+    } catch (error) {
+      toast.error(t("skills.usage.weekModeSaveFailed"), {
+        description: String(error),
+      });
+    }
+  };
   const pluginStates = usePluginStates();
   const togglePlugin = useTogglePlugin();
   const usageSnapshot = usage.data?.snapshots?.[usageRange];
@@ -1193,34 +1226,107 @@ const UnifiedSkillsPanel = React.forwardRef<
       <AppCountBar
         totalLabel=""
         leading={
-          <div
-            className="inline-flex h-8 shrink-0 gap-0.5 rounded-lg border border-border-default bg-muted/60 p-0.5"
-            role="group"
-            aria-label={t("skills.usage.range")}
-          >
-            {(["day", "week"] as const).map((range) => (
+          <TooltipProvider delayDuration={250} skipDelayDuration={0}>
+            <div
+              className="inline-flex h-8 shrink-0 gap-0.5 rounded-lg border border-border-default bg-muted/60 p-0.5"
+              role="group"
+              aria-label={t("skills.usage.range")}
+            >
               <button
-                key={range}
                 type="button"
-                aria-pressed={usageRange === range}
-                onClick={() => setUsageRange(range)}
+                aria-pressed={usageRange === "day"}
+                onClick={() => setUsageRange("day")}
                 className={cn(
-                  "rounded-md px-2.5 text-xs transition-colors",
-                  usageRange === range
+                  "inline-flex items-center rounded-md px-2.5 text-xs transition-colors",
+                  usageRange === "day"
                     ? "bg-background font-semibold text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {t(
-                  range === "day" ? "skills.usage.today" : "skills.usage.week",
-                )}{" "}
-                <span className="font-semibold tabular-nums">
-                  {usageTotal(usage.data?.snapshots?.[range]) ?? "…"}
-                </span>{" "}
-                {t("skills.usage.times")}
+                <span>
+                  {t("skills.usage.today")}{" "}
+                  <span className="font-semibold tabular-nums">
+                    {usageTotal(usage.data?.snapshots?.day) ?? "…"}
+                  </span>{" "}
+                  {t("skills.usage.times")}
+                </span>
               </button>
-            ))}
-          </div>
+
+              <div
+                className={cn(
+                  "inline-flex items-stretch rounded-md transition-colors",
+                  usageRange === "week"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground",
+                )}
+              >
+                <button
+                  type="button"
+                  aria-pressed={usageRange === "week"}
+                  onClick={() => setUsageRange("week")}
+                  className={cn(
+                    "inline-flex items-center rounded-l-md pl-2.5 pr-1.5 text-xs transition-colors",
+                    usageRange === "week"
+                      ? "font-semibold text-foreground"
+                      : "hover:text-foreground",
+                  )}
+                >
+                  <span>
+                    {t(weekLabelKey)}{" "}
+                    <span className="font-semibold tabular-nums">
+                      {usageTotal(usage.data?.snapshots?.week) ?? "…"}
+                    </span>{" "}
+                    {t("skills.usage.times")}
+                  </span>
+                </button>
+                <span
+                  aria-hidden="true"
+                  className="my-1.5 w-px shrink-0 bg-border/80"
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t("skills.usage.switchWeekMode", {
+                        next: t(
+                          weekMode === "calendar_week"
+                            ? "skills.usage.week"
+                            : "skills.usage.calendarWeek",
+                        ),
+                      })}
+                      onClick={() => void handleToggleWeekMode()}
+                      className={cn(
+                        "inline-flex items-center justify-center rounded-r-md px-1.5 transition-colors",
+                        usageRange === "week"
+                          ? "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                          : "text-muted-foreground/80 hover:bg-background/60 hover:text-foreground",
+                      )}
+                    >
+                      <ArrowLeftRight
+                        className="h-3 w-3 shrink-0"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipPortal>
+                    <TooltipContent
+                      side="bottom"
+                      sideOffset={6}
+                      className="rounded-lg border border-border-default bg-popover px-2.5 py-1.5 text-[11px] text-popover-foreground shadow-md !animate-none"
+                    >
+                      {t("skills.usage.switchWeekMode", {
+                        next: t(
+                          weekMode === "calendar_week"
+                            ? "skills.usage.week"
+                            : "skills.usage.calendarWeek",
+                        ),
+                      })}
+                    </TooltipContent>
+                  </TooltipPortal>
+                </Tooltip>
+              </div>
+            </div>
+          </TooltipProvider>
         }
         countsLabel={<span>{t("skills.usage.enabledCallsLabel")}</span>}
         formatCount={(app, count) => {
@@ -1247,13 +1353,23 @@ const UnifiedSkillsPanel = React.forwardRef<
               app: APP_ICON_MAP[app].label,
               count,
             }),
-            t(
-              usageRange === "day" ? "skills.usage.today" : "skills.usage.week",
-            ) +
+            t(usageRange === "day" ? "skills.usage.today" : weekLabelKey) +
               ": " +
               agentUsageLabel(app),
           ].join("\n")
         }
+        getHoverRows={(app, count) => [
+          {
+            label: t("skills.usage.enabledTitle"),
+            value: `${count} / ${filteredSkills.length}`,
+          },
+          {
+            label: t(
+              usageRange === "day" ? "skills.usage.today" : weekLabelKey,
+            ),
+            value: agentUsageLabel(app),
+          },
+        ]}
         counts={enabledCounts}
         appIds={visibleSkillAppIds}
         totalCount={filteredSkills.length}
@@ -1467,6 +1583,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                       ) ?? []
                     }
                     usageRange={usageRange}
+                    usageWeekMode={weekMode}
                     usageBoundaries={usage.boundaries[usageRange]}
                     usageStatus={
                       usageSnapshot ??
@@ -1648,6 +1765,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                           records={group.rows}
                           boundaries={usage.boundaries[usageRange]}
                           range={usageRange}
+                          weekMode={weekMode}
                           hoveredApp={null}
                           status={usageSnapshot}
                           mode={usageMode}
@@ -1680,6 +1798,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                                 records={rows}
                                 boundaries={usage.boundaries[usageRange]}
                                 range={usageRange}
+                                weekMode={weekMode}
                                 hoveredApp={null}
                                 status={usageSnapshot}
                                 mode={usageMode}
@@ -1777,6 +1896,7 @@ interface InstalledSkillListItemProps {
   appIds: AppId[];
   usageRecords: SkillUsageSummary[];
   usageRange: SkillUsageRange;
+  usageWeekMode?: SkillUsageWeekMode;
   usageBoundaries: number[];
   usageStatus?: Pick<SkillUsageSnapshot, "completed" | "error">;
   usageMode?: "count" | "tokens";
@@ -1797,6 +1917,7 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   appIds,
   usageRecords,
   usageRange,
+  usageWeekMode = "rolling_7d",
   usageBoundaries,
   usageStatus,
   usageMode = "count",
@@ -1833,7 +1954,9 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
             : t(
                 usageRange === "day"
                   ? "skills.usage.unusedToday"
-                  : "skills.usage.unusedWeek",
+                  : usageWeekMode === "calendar_week"
+                    ? "skills.usage.unusedCalendarWeek"
+                    : "skills.usage.unusedWeek",
               );
       const lastUsed = record
         ? new Date(record.lastUsed * 1000).toLocaleString()
@@ -1925,7 +2048,11 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
                 range:
                   usageRange === "day"
                     ? t("skills.usage.today")
-                    : t("skills.usage.week"),
+                    : t(
+                        usageWeekMode === "calendar_week"
+                          ? "skills.usage.calendarWeek"
+                          : "skills.usage.week",
+                      ),
                 value: skillTotalTokens.toLocaleString(),
               })}
             >
@@ -1943,12 +2070,12 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
           )}
         </div>
         {skill.description && (
-          <p
-            className="text-xs text-muted-foreground truncate"
-            title={skill.description}
-          >
-            {skill.description}
-          </p>
+          <SkillDescription
+            name={skill.name}
+            description={skill.description}
+            source={sourceLabel}
+            className="truncate"
+          />
         )}
       </div>
 
@@ -1956,6 +2083,7 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
         records={usageRecords}
         boundaries={usageBoundaries}
         range={usageRange}
+        weekMode={usageWeekMode}
         hoveredApp={hoveredApp}
         status={usageStatus}
         mode={usageMode}

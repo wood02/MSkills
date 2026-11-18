@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppCountBar } from "@/components/common/AppCountBar";
 
@@ -91,28 +91,50 @@ describe("AppCountBar", () => {
     expect(onToggleAll).toHaveBeenCalledWith("mcode", true);
   });
 
-  it("labels enabled counts while preserving the bulk action and description", () => {
-    const onToggleAll = vi.fn();
-    render(
-      <AppCountBar
-        totalLabel=""
-        leading={<span>Calls</span>}
-        countsLabel="Enabled skills (count)"
-        getCountDescription={(app, count) =>
-          `${count} skills enabled for ${app}`
-        }
-        counts={{ codex: 3 }}
-        appIds={["codex"]}
-        totalCount={4}
-        onToggleAll={onToggleAll}
-      />,
-    );
-    expect(screen.getByText("Enabled skills (count)")).toBeInTheDocument();
-    const control = screen.getByRole("checkbox");
-    expect(control.title).toContain("3 skills enabled for codex");
-    expect(control).toHaveClass("bg-blue-500/10");
-    fireEvent.click(control);
-    expect(onToggleAll).toHaveBeenCalledWith("codex", true);
+  it("labels enabled counts while preserving the bulk action and hover description", () => {
+    vi.useFakeTimers();
+    try {
+      const onToggleAll = vi.fn();
+      render(
+        <AppCountBar
+          totalLabel=""
+          leading={<span>Calls</span>}
+          countsLabel="Enabled skills (count)"
+          getCountDescription={(app, count) =>
+            `${count} skills enabled for ${app}`
+          }
+          counts={{ codex: 3 }}
+          appIds={["codex"]}
+          totalCount={4}
+          onToggleAll={onToggleAll}
+        />,
+      );
+      expect(screen.getByText("Enabled skills (count)")).toBeInTheDocument();
+      const control = screen.getByRole("checkbox");
+      expect(control).not.toHaveAttribute("title");
+      expect(control).toHaveClass("bg-blue-500/10");
+
+      fireEvent.mouseEnter(control);
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(
+        screen.getByText("3 skills enabled for codex"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "common.enableAllShort (+1)" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "common.disableAllShort (3)" }),
+      ).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "common.disableAllShort (3)" }),
+      );
+      expect(onToggleAll).toHaveBeenCalledWith("codex", false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps legacy counts non-interactive without a bulk callback", () => {
@@ -312,5 +334,79 @@ describe("AppCountBar", () => {
     expect(codex).toHaveClass("bg-blue-500/10");
     expect(antigravity).toHaveClass("bg-antigravity-gradient-ring");
     expect(dsh).toHaveClass("bg-muted/65", "text-muted-foreground");
+  });
+
+  it("renders structured hover rows and state-matched enable/disable buttons", () => {
+    vi.useFakeTimers();
+    try {
+      const onToggleAll = vi.fn();
+      const { rerender } = render(
+        <AppCountBar
+          totalLabel=""
+          appIds={["claude"]}
+          counts={{ claude: 2 }}
+          totalCount={5}
+          getHoverRows={(app, count) => [
+            { label: `${app}-enabled`, value: `${count} / 5` },
+            { label: "7d", value: "4次" },
+          ]}
+          onToggleAll={onToggleAll}
+        />,
+      );
+
+      fireEvent.mouseEnter(screen.getByRole("checkbox"));
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+
+      expect(screen.getByText("claude-enabled")).toBeInTheDocument();
+      expect(screen.getByText("2 / 5")).toBeInTheDocument();
+      expect(screen.getByText("4次")).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "common.enableAllShort (+3)" }),
+      );
+      expect(onToggleAll).toHaveBeenNthCalledWith(1, "claude", true);
+
+      // Re-open on none state: only enable button is shown
+      rerender(
+        <AppCountBar
+          totalLabel=""
+          appIds={["claude"]}
+          counts={{ claude: 0 }}
+          totalCount={5}
+          onToggleAll={onToggleAll}
+        />,
+      );
+      fireEvent.mouseEnter(screen.getByRole("checkbox"));
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(
+        screen.getByRole("button", { name: "common.enableAllShort (5)" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /common\.disableAllShort/ }),
+      ).not.toBeInTheDocument();
+
+      // Switch to all state: only disable button is shown
+      rerender(
+        <AppCountBar
+          totalLabel=""
+          appIds={["claude"]}
+          counts={{ claude: 5 }}
+          totalCount={5}
+          onToggleAll={onToggleAll}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "common.disableAllShort (5)" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /common\.enableAllShort/ }),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

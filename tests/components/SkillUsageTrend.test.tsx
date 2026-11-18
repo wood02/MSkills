@@ -199,4 +199,58 @@ describe("SkillUsageTrend", () => {
       within(trend).getByText("145.0k").closest("span"),
     ).toHaveClass("text-purple-700");
   });
+
+  it("uses calendar-week labels when weekMode is calendar_week", async () => {
+    const start = new Date(2026, 10, 16).getTime() / 1000;
+    const boundaries = Array.from(
+      { length: 8 },
+      (_, index) => start + index * 86400,
+    );
+    const { rerender } = render(
+      <SkillUsageTrend
+        records={[]}
+        range="week"
+        weekMode="calendar_week"
+        boundaries={boundaries}
+        hoveredApp={null}
+        status={{ completed: true, error: null }}
+      />,
+    );
+    expect(
+      screen.getByRole("group", { name: "skills.usage.unusedCalendarWeek" }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <SkillUsageTrend
+        records={[
+          {
+            skillName: "test",
+            app: "claude",
+            count: 2,
+            sessions: 1,
+            lastUsed: start,
+            manualCount: 0,
+            agentCount: 2,
+            buckets: [2, 0, 0, 0, 0, 0, 0],
+            inputTokens: 1200,
+            outputTokens: 300,
+            tokenBuckets: [1500, 0, 0, 0, 0, 0, 0],
+          },
+        ]}
+        range="week"
+        weekMode="calendar_week"
+        boundaries={boundaries}
+        hoveredApp={null}
+        status={{ completed: true, error: null }}
+        mode="tokens"
+      />,
+    );
+    const user = userEvent.setup();
+    const buckets = within(screen.getByTestId("skill-usage-trend")).getAllByRole(
+      "button",
+    );
+    await user.hover(buckets[0]);
+    const details = await screen.findByRole("tooltip");
+    expect(details).toHaveTextContent("skills.usage.calendarWeekAggregate");
+  });
 });

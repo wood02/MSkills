@@ -1,5 +1,6 @@
 import type { SkillUsageRange, SkillUsageSnapshot } from "@/lib/api/skills";
 import type { AppId } from "@/lib/api/types";
+import type { SkillUsageWeekMode } from "@/types";
 
 export function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) {
@@ -32,10 +33,22 @@ export function skillUsageTotals(
   return totals;
 }
 
-export function skillUsageBoundaries(range: SkillUsageRange, now = new Date()) {
+export function skillUsageBoundaries(
+  range: SkillUsageRange,
+  now = new Date(),
+  weekMode: SkillUsageWeekMode = "rolling_7d",
+) {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
-  if (range === "week") start.setDate(start.getDate() - 6);
+  if (range === "week") {
+    if (weekMode === "calendar_week") {
+      // Natural week: Monday 00:00 through Sunday 24:00; future days stay 0.
+      const offsetFromMonday = (start.getDay() + 6) % 7;
+      start.setDate(start.getDate() - offsetFromMonday);
+    } else {
+      start.setDate(start.getDate() - 6);
+    }
+  }
   return Array.from({ length: range === "day" ? 13 : 8 }, (_, index) => {
     const at = new Date(start);
     if (range === "day") at.setHours(index * 2);

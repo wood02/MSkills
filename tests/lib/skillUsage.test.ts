@@ -22,6 +22,20 @@ describe("Skill usage time ranges", () => {
     expect(new Date(boundaries[0] * 1000)).toEqual(new Date(2026, 9, 10));
     expect(new Date(boundaries[7] * 1000)).toEqual(new Date(2026, 9, 17));
   });
+
+  it("aligns calendar_week from Monday 00:00 through Sunday 24:00 (Mon–Sun)", () => {
+    // 2026-11-16 (Mon), 2026-11-18 (Wed), 2026-11-22 (Sun) -> all start 2026-11-16 00:00 -> 2026-11-23 00:00
+    for (const day of [16, 18, 22]) {
+      const boundaries = skillUsageBoundaries(
+        "week",
+        new Date(2026, 10, day, 14, 0),
+        "calendar_week",
+      );
+      expect(boundaries).toHaveLength(8);
+      expect(new Date(boundaries[0] * 1000)).toEqual(new Date(2026, 10, 16));
+      expect(new Date(boundaries[7] * 1000)).toEqual(new Date(2026, 10, 23));
+    }
+  });
 });
 
 describe("Skill usage scan snapshots", () => {
