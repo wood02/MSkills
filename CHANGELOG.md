@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.0.10 - 2026-11-18
+
+- Skills 统计口径与交互优化（`#32`）：
+  - 新增 Skills 周统计口径设置 `SkillUsageWeekMode`，支持在「近 7 天（滚动）」与「本周（周一至周日）」之间切换，覆盖趋势图、关联 Token 计算、Skills 顶栏快捷切换及设置页配置项。
+  - 抽取 `SkillDescription` 组件并支持 `SkillMarkdownPreview` 紧凑模式，优化超长描述的截断悬浮提示与完整内容预览。
+  - 优化 Skills 列表批量启用/关闭操作与多语言文案。
+
 ## v1.0.9 - 2026-11-16
 
 - 新增项目工作区（Project Workspace）：
