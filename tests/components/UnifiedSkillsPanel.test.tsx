@@ -1,5 +1,11 @@
 import { createRef } from "react";
-import { render, screen, waitFor, act, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  act,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -85,6 +91,12 @@ let bulkToggleSkillAppPending = false;
 let bulkToggleSkillAppVariables:
   | { ids: string[]; app: "claude"; enabled: boolean }
   | undefined;
+let weekModeMock: "rolling_7d" | "calendar_week" = "rolling_7d";
+const toggleWeekModeMock = vi.fn(async () => {
+  weekModeMock =
+    weekModeMock === "calendar_week" ? "rolling_7d" : "calendar_week";
+  return weekModeMock;
+});
 
 vi.mock("sonner", () => ({
   toast: {
@@ -96,12 +108,19 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/useSkills", () => ({
-  useSkillUsage: () => {
+  useSkillUsageWeekMode: () => ({
+    weekMode: weekModeMock,
+    setWeekMode: vi.fn(),
+    toggleWeekMode: toggleWeekModeMock,
+    isSaving: false,
+  }),
+  useSkillUsage: (weekMode = weekModeMock) => {
     settledUsageDataMock = settleSkillUsage(settledUsageDataMock, {
       ...usageDataMock,
     });
     return {
       data: settledUsageDataMock,
+      weekMode,
       boundaries: {
         day: Array.from(
           { length: 13 },
@@ -237,6 +256,30 @@ const usageRecord = (skillName: string, count: number, length = 12) => ({
 });
 
 describe("UnifiedSkillsPanel", () => {
+  it("shows clipped installed skill descriptions in the reading tooltip", async () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    const scrollWidth = vi
+      .spyOn(HTMLElement.prototype, "scrollWidth", "get")
+      .mockReturnValue(600);
+    const clientWidth = vi
+      .spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockReturnValue(240);
+    try {
+      const view = renderPanel();
+      const description = screen.getByText("Alpha description");
+      expect(description).not.toHaveAttribute("title");
+      await userEvent.setup().hover(description);
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip).toHaveTextContent("Alpha Skill");
+      expect(tooltip).toHaveTextContent("owner/repo");
+      expect(tooltip).toHaveTextContent("Alpha description");
+      expect(view.container).not.toContainElement(tooltip);
+    } finally {
+      scrollWidth.mockRestore();
+      clientWidth.mockRestore();
+    }
+  });
+
   it("keeps scan failures visible and retains the last completed usage", () => {
     installedSkillsMock = [makeInstalledSkill()];
     usageDataMock.day.records = [usageRecord("alpha-skill", 3)];
@@ -690,6 +733,8 @@ describe("UnifiedSkillsPanel", () => {
     toggleSkillAppVariables = undefined;
     bulkToggleSkillAppPending = false;
     bulkToggleSkillAppVariables = undefined;
+    weekModeMock = "rolling_7d";
+    toggleWeekModeMock.mockClear();
     scanUnmanagedMock.mockReset();
     scanUnmanagedMock.mockResolvedValue({
       data: [
@@ -1794,5 +1839,47 @@ describe("UnifiedSkillsPanel", () => {
       screen.queryByRole("button", { name: "Pi" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Claude" })).toBeInTheDocument();
+  });
+
+  it("selects week via left side and toggles rolling 7d / calendar week via split icon button", async () => {
+    installedSkillsMock = [
+      makeInstalledSkill({ name: "Alpha Skill", directory: "alpha-skill" }),
+    ];
+    usageDataMock.week.records = [
+      {
+        ...usageRecord("alpha-skill", 4),
+        inputTokens: 1000,
+        outputTokens: 500,
+      },
+    ];
+
+    const { rerender } = renderPanel();
+    const user = userEvent.setup();
+    const weekBtn = screen.getByRole("button", { name: /skills\.usage\.week/ });
+    const switchModeBtn = screen.getByRole("button", {
+      name: "skills.usage.switchWeekMode",
+    });
+    expect(weekBtn).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(weekBtn);
+    expect(weekBtn).toHaveAttribute("aria-pressed", "true");
+    expect(toggleWeekModeMock).not.toHaveBeenCalled();
+
+    await user.click(switchModeBtn);
+
+    await waitFor(() => {
+      expect(toggleWeekModeMock).toHaveBeenCalledTimes(1);
+    });
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "skills.usage.weekModeSwitched",
+    );
+
+    rerender(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+    const calBtn = screen.getByRole("button", {
+      name: /skills\.usage\.calendarWeek/,
+    });
+    expect(calBtn).toHaveAttribute("aria-pressed", "true");
   });
 });

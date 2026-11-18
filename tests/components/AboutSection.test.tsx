@@ -38,6 +38,7 @@ describe("application update actions", () => {
   beforeEach(() => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     update.hasUpdate = true;
+    update.updateInfo.notes = "更新说明";
     update.updateInfo.manualInstall = false;
     vi.mocked(settingsApi.checkUpdates)
       .mockReset()
@@ -92,5 +93,17 @@ describe("application update actions", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it("renders markdown release notes instead of raw truncated text", () => {
+    update.updateInfo.notes =
+      "- 新增 **项目工作区**：\n  - 支持 `CLAUDE.md` 与 `.agents/skills` 管理";
+    const { container } = render(<AboutSection isPortable={false} />);
+
+    const lists = container.querySelectorAll("ul");
+    expect(lists.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("项目工作区").tagName).toBe("STRONG");
+    expect(screen.getByText("CLAUDE.md").tagName).toBe("CODE");
+    expect(screen.getByText(".agents/skills").tagName).toBe("CODE");
   });
 });

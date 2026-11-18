@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { AppId } from "@/lib/api/types";
+import type { SkillUsageWeekMode } from "@/types";
 import type {
   SkillUsageRange,
   SkillUsageSnapshot,
@@ -21,6 +22,7 @@ interface Props {
   records: SkillUsageSummary[];
   boundaries: number[];
   range: SkillUsageRange;
+  weekMode?: SkillUsageWeekMode;
   hoveredApp: AppId | null;
   status?: Pick<SkillUsageSnapshot, "completed" | "error">;
   mode?: "count" | "tokens";
@@ -31,6 +33,7 @@ export function SkillUsageTrend({
   records,
   boundaries,
   range,
+  weekMode = "rolling_7d",
   hoveredApp,
   status,
   mode = "count",
@@ -93,7 +96,9 @@ export function SkillUsageTrend({
         : t(
             range === "day"
               ? "skills.usage.unusedToday"
-              : "skills.usage.unusedWeek",
+              : weekMode === "calendar_week"
+                ? "skills.usage.unusedCalendarWeek"
+                : "skills.usage.unusedWeek",
           );
   return (
     <div
@@ -127,7 +132,9 @@ export function SkillUsageTrend({
                   ? `${formatTime(boundaries[index])}–${index === totals.length - 1 ? "24:00" : formatTime(boundaries[index + 1])}`
                   : new Date(boundaries[index] * 1000).toLocaleDateString(
                       undefined,
-                      { month: "short", day: "numeric" },
+                      weekMode === "calendar_week"
+                        ? { month: "short", day: "numeric", weekday: "short" }
+                        : { month: "short", day: "numeric" },
                     );
               const bucketCalls = visible.reduce(
                 (sum, record) => sum + (record.buckets[index] ?? 0),
@@ -313,7 +320,12 @@ export function SkillUsageTrend({
                             <span className="font-medium text-muted-foreground">
                               {range === "day"
                                 ? t("skills.usage.dayAggregate", { count })
-                                : t("skills.usage.weekAggregate", { count })}
+                                : t(
+                                    weekMode === "calendar_week"
+                                      ? "skills.usage.calendarWeekAggregate"
+                                      : "skills.usage.weekAggregate",
+                                    { count },
+                                  )}
                             </span>
                             <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-foreground">
                               <Zap

@@ -45,11 +45,10 @@ describe("SkillCard description", () => {
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip).toHaveTextContent(skill.description);
     expect(view.container).not.toContainElement(tooltip);
-    expect(tooltip.closest("[data-side]")).toHaveClass(
-      "overflow-y-auto",
-      "select-text",
-      "whitespace-pre-wrap",
-    );
+    expect(tooltip.closest("[data-side]")).toHaveTextContent(skill.name);
+    expect(
+      tooltip.closest("[data-side]")?.querySelector(".overflow-y-auto"),
+    ).toHaveClass("overflow-y-auto", "select-text", "whitespace-pre-wrap");
     await user.keyboard("{Escape}");
     await waitFor(() =>
       expect(screen.queryByRole("tooltip")).not.toBeInTheDocument(),

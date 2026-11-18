@@ -1,6 +1,7 @@
 import { Fragment, createElement, useMemo, type ReactNode } from "react";
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import { settingsApi } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 type MarkdownNode = ReturnType<typeof markdownLanguage.parser.parse>["topNode"];
@@ -17,7 +18,11 @@ const markers = new Set([
   "StrikethroughMark",
 ]);
 
-function renderNode(node: MarkdownNode, source: string): ReactNode {
+function renderNode(
+  node: MarkdownNode,
+  source: string,
+  compact = false,
+): ReactNode {
   if (markers.has(node.name)) return null;
   const text = source.slice(node.from, node.to);
   const children = () => {
@@ -26,7 +31,9 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
     for (let child = node.firstChild; child; child = child.nextSibling) {
       parts.push(source.slice(from, child.from));
       parts.push(
-        <Fragment key={child.from}>{renderNode(child, source)}</Fragment>,
+        <Fragment key={child.from}>
+          {renderNode(child, source, compact)}
+        </Fragment>,
       );
       from = child.to;
     }
@@ -36,7 +43,11 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
   if (/^(ATX|Setext)Heading[1-6]$/.test(node.name)) {
     return createElement(
       `h${node.name.slice(-1)}`,
-      { className: "my-4 text-lg font-semibold" },
+      {
+        className: compact
+          ? "my-2 text-xs font-semibold text-foreground first:mt-0"
+          : "my-4 text-lg font-semibold",
+      },
       children(),
     );
   }
@@ -44,7 +55,17 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
     case "Document":
       return <>{children()}</>;
     case "Paragraph":
-      return <p className="my-3 whitespace-pre-wrap">{children()}</p>;
+      return (
+        <p
+          className={
+            compact
+              ? "my-1.5 whitespace-pre-wrap first:mt-0 last:mb-0"
+              : "my-3 whitespace-pre-wrap"
+          }
+        >
+          {children()}
+        </p>
+      );
     case "StrongEmphasis":
       return <strong>{children()}</strong>;
     case "Emphasis":
@@ -53,7 +74,13 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
       return <del>{children()}</del>;
     case "InlineCode":
       return (
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">
+        <code
+          className={
+            compact
+              ? "rounded bg-background/70 px-1 py-0.5 font-mono text-[11px] text-foreground"
+              : "rounded bg-muted px-1 py-0.5 text-xs"
+          }
+        >
           {children()}
         </code>
       );
@@ -70,13 +97,27 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
       );
     }
     case "BulletList":
-      return <ul className="my-3 list-disc space-y-1 pl-6">{children()}</ul>;
+      return (
+        <ul
+          className={
+            compact
+              ? "my-1 list-disc space-y-1 pl-4 first:mt-0 last:mb-0"
+              : "my-3 list-disc space-y-1 pl-6"
+          }
+        >
+          {children()}
+        </ul>
+      );
     case "OrderedList": {
       const mark = node.getChild("ListItem")?.getChild("ListMark");
       return (
         <ol
           start={mark ? parseInt(source.slice(mark.from, mark.to), 10) : 1}
-          className="my-3 list-decimal space-y-1 pl-6"
+          className={
+            compact
+              ? "my-1 list-decimal space-y-1 pl-4 first:mt-0 last:mb-0"
+              : "my-3 list-decimal space-y-1 pl-6"
+          }
         >
           {children()}
         </ol>
@@ -101,7 +142,9 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
                 ...node.getChildren("TableHeader"),
                 ...node.getChildren("TableRow"),
               ].map((row) => (
-                <Fragment key={row.from}>{renderNode(row, source)}</Fragment>
+                <Fragment key={row.from}>
+                  {renderNode(row, source, compact)}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -112,7 +155,9 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
       return (
         <tr>
           {node.getChildren("TableCell").map((cell) => (
-            <Fragment key={cell.from}>{renderNode(cell, source)}</Fragment>
+            <Fragment key={cell.from}>
+              {renderNode(cell, source, compact)}
+            </Fragment>
           ))}
         </tr>
       );
@@ -166,7 +211,15 @@ function renderNode(node: MarkdownNode, source: string): ReactNode {
   }
 }
 
-export function SkillMarkdownPreview({ content }: { content: string }) {
+export function SkillMarkdownPreview({
+  content,
+  compact = false,
+  className,
+}: {
+  content: string;
+  compact?: boolean;
+  className?: string;
+}) {
   const body = content.replace(
     /^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/,
     "",
@@ -177,12 +230,20 @@ export function SkillMarkdownPreview({ content }: { content: string }) {
       body.length > 65536 ? (
         <pre className="whitespace-pre-wrap">{body}</pre>
       ) : (
-        renderNode(markdownLanguage.parser.parse(body).topNode, body)
+        renderNode(markdownLanguage.parser.parse(body).topNode, body, compact)
       ),
-    [body],
+    [body, compact],
   );
   return (
-    <div className="break-words text-sm text-foreground [overflow-wrap:anywhere]">
+    <div
+      className={cn(
+        "break-words [overflow-wrap:anywhere]",
+        compact
+          ? "text-xs leading-relaxed text-muted-foreground"
+          : "text-sm text-foreground",
+        className,
+      )}
+    >
       {rendered}
     </div>
   );

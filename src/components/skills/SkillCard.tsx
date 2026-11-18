@@ -1,5 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { Portal as TooltipPortal } from "@radix-ui/react-tooltip";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Card,
@@ -11,12 +10,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   ExternalLink,
   Download,
@@ -39,6 +32,7 @@ import {
   type BestSkillsMetricIcon,
 } from "@/lib/bestSkills";
 import { RepoAvatar } from "./RepoAvatar";
+import { SkillDescription } from "./SkillDescription";
 
 type SkillCardSkill = DiscoverableSkill & { installed: boolean };
 
@@ -219,22 +213,6 @@ export function SkillCard({
 }: SkillCardProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const descriptionRef = useRef<HTMLParagraphElement>(null);
-  const [descriptionOverflow, setDescriptionOverflow] = useState(false);
-  const [descriptionOpen, setDescriptionOpen] = useState(false);
-
-  useEffect(() => {
-    const description = descriptionRef.current;
-    if (!description) return;
-    const measure = () =>
-      setDescriptionOverflow(
-        description.scrollHeight > description.clientHeight,
-      );
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(description);
-    return () => observer.disconnect();
-  }, [skill.description]);
 
   const handleInstall = async () => {
     setLoading(true);
@@ -336,37 +314,13 @@ export function SkillCard({
       </CardHeader>
       {skill.description ? (
         <CardContent className="flex-1 px-4 pt-0 pb-3">
-          <TooltipProvider delayDuration={150} skipDelayDuration={0}>
-            <Tooltip
-              open={descriptionOverflow && descriptionOpen}
-              onOpenChange={setDescriptionOpen}
-              disableHoverableContent={false}
-            >
-              <TooltipTrigger asChild>
-                <p
-                  ref={descriptionRef}
-                  tabIndex={descriptionOverflow ? 0 : undefined}
-                  className={cn(
-                    "text-[13px] text-muted-foreground line-clamp-4 leading-relaxed",
-                    descriptionOverflow &&
-                      "cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
-                >
-                  {skill.description}
-                </p>
-              </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent
-                  side="top"
-                  sideOffset={8}
-                  collisionPadding={16}
-                  className="w-[480px] max-w-[calc(100vw-2rem)] max-h-[min(320px,var(--radix-tooltip-content-available-height))] overflow-y-auto whitespace-pre-wrap break-words select-text border border-border bg-popover px-4 py-3 text-sm leading-relaxed text-popover-foreground shadow-lg !animate-none"
-                >
-                  {skill.description}
-                </TooltipContent>
-              </TooltipPortal>
-            </Tooltip>
-          </TooltipProvider>
+          <SkillDescription
+            name={skill.name}
+            description={skill.description}
+            source={`${skill.repoOwner}/${skill.repoName}`}
+            side="top"
+            className="text-[13px] line-clamp-4 leading-relaxed"
+          />
         </CardContent>
       ) : (
         <div className="flex-1" />

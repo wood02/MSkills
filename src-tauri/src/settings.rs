@@ -21,6 +21,16 @@ fn default_true() -> bool {
     true
 }
 
+/// Skills 统计的周时间窗口口径
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SkillUsageWeekMode {
+    #[default]
+    #[serde(rename = "rolling_7d")]
+    Rolling7d,
+    #[serde(rename = "calendar_week")]
+    CalendarWeek,
+}
+
 /// 主页面显示的应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -509,6 +519,9 @@ pub struct AppSettings {
     /// Skill 存储位置：mskills（默认）或 unified（~/.agents/skills/）
     #[serde(default)]
     pub skill_storage_location: SkillStorageLocation,
+    /// Skills 调用量/Token 周统计口径：rolling_7d（近 7 天，默认）或 calendar_week（本周）
+    #[serde(default)]
+    pub skill_usage_week_mode: SkillUsageWeekMode,
 
     // ===== WebDAV 同步设置 =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -608,6 +621,7 @@ impl Default for AppSettings {
             current_provider_hermes: None,
             skill_sync_method: SyncMethod::default(),
             skill_storage_location: SkillStorageLocation::default(),
+            skill_usage_week_mode: SkillUsageWeekMode::default(),
             webdav_sync: None,
             s3_sync: None,
             webdav_backup: None,
@@ -1371,5 +1385,31 @@ mod tests {
             .unwrap()
             .dsh_config_dir
             .is_none());
+    }
+
+    #[test]
+    fn skill_usage_week_mode_defaults_to_rolling_and_round_trips() {
+        let defaults = serde_json::from_value::<AppSettings>(serde_json::json!({})).unwrap();
+        assert_eq!(
+            defaults.skill_usage_week_mode,
+            super::SkillUsageWeekMode::Rolling7d
+        );
+        assert_eq!(
+            serde_json::to_value(&defaults).unwrap()["skillUsageWeekMode"],
+            "rolling_7d"
+        );
+
+        let calendar: AppSettings = serde_json::from_value(serde_json::json!({
+            "skillUsageWeekMode": "calendar_week"
+        }))
+        .unwrap();
+        assert_eq!(
+            calendar.skill_usage_week_mode,
+            super::SkillUsageWeekMode::CalendarWeek
+        );
+        assert_eq!(
+            serde_json::to_value(&calendar).unwrap()["skillUsageWeekMode"],
+            "calendar_week"
+        );
     }
 }

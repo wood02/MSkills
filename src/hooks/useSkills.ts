@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import {
   useMutation,
   useQuery,
@@ -17,7 +18,9 @@ import {
   type SkillsShLeaderboardView,
 } from "@/lib/api/skills";
 import { settingsApi } from "@/lib/api/settings";
+import { useSaveSettingsMutation, useSettingsQuery } from "@/lib/query";
 import type { AppId } from "@/lib/api/types";
+import type { Settings, SkillUsageWeekMode } from "@/types";
 import { mergeImportedSkills } from "@/hooks/useSkills.helpers";
 import { runSequentialBulkAction } from "@/lib/utils/sequentialBulkAction";
 import { parseBestSkills, type BestSkillsRanking } from "@/lib/bestSkills";
@@ -27,13 +30,64 @@ import {
   type SkillUsageData,
 } from "@/lib/skillUsage";
 
-export function useSkillUsage() {
+export function useSkillUsageWeekMode() {
   const queryClient = useQueryClient();
+  const settingsQuery = useSettingsQuery();
+  const saveSettingsMutation = useSaveSettingsMutation();
+  const weekMode: SkillUsageWeekMode =
+    settingsQuery.data?.skillUsageWeekMode === "calendar_week"
+      ? "calendar_week"
+      : "rolling_7d";
+
+  const setWeekMode = useCallback(
+    async (nextMode: SkillUsageWeekMode): Promise<SkillUsageWeekMode> => {
+      const base =
+        settingsQuery.data ??
+        queryClient.getQueryData<Settings>(["settings"]) ??
+        (await settingsApi.get());
+      const previous = queryClient.getQueryData<Settings>(["settings"]);
+      const updated: Settings = { ...base, skillUsageWeekMode: nextMode };
+      queryClient.setQueryData<Settings>(["settings"], updated);
+      try {
+        await saveSettingsMutation.mutateAsync(updated);
+        return nextMode;
+      } catch (error) {
+        if (previous !== undefined) {
+          queryClient.setQueryData<Settings>(["settings"], previous);
+        }
+        throw error;
+      }
+    },
+    [queryClient, saveSettingsMutation, settingsQuery.data],
+  );
+
+  const toggleWeekMode = useCallback(async () => {
+    const nextMode: SkillUsageWeekMode =
+      weekMode === "calendar_week" ? "rolling_7d" : "calendar_week";
+    return setWeekMode(nextMode);
+  }, [setWeekMode, weekMode]);
+
+  return {
+    weekMode,
+    setWeekMode,
+    toggleWeekMode,
+    isSaving: saveSettingsMutation.isPending,
+  };
+}
+
+export function useSkillUsage(weekModeOverride?: SkillUsageWeekMode) {
+  const queryClient = useQueryClient();
+  const settingsQuery = useSettingsQuery();
+  const resolvedWeekMode: SkillUsageWeekMode =
+    weekModeOverride ??
+    (settingsQuery.data?.skillUsageWeekMode === "calendar_week"
+      ? "calendar_week"
+      : "rolling_7d");
   const boundaries = {
     day: skillUsageBoundaries("day"),
-    week: skillUsageBoundaries("week"),
+    week: skillUsageBoundaries("week", new Date(), resolvedWeekMode),
   };
-  const queryKey = ["skills", "usage", boundaries];
+  const queryKey = ["skills", "usage", resolvedWeekMode, boundaries];
   const query = useQuery({
     queryKey,
     queryFn: async () => {
@@ -49,7 +103,7 @@ export function useSkillUsage() {
     refetchInterval: (query) =>
       query.state.data?.status.scanning ? 1500 : 30_000,
   });
-  return { ...query, boundaries };
+  return { ...query, boundaries, weekMode: resolvedWeekMode };
 }
 
 /**
